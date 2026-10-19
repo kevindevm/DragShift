@@ -1,5 +1,6 @@
 # PyInstaller spec. ONEFILE=1 -> portable single exe; otherwise a folder for the installer.
 import os
+import sys
 from PyInstaller.utils.hooks import collect_all
 
 onefile = os.environ.get("ONEFILE") == "1"
@@ -11,10 +12,14 @@ try:
 except Exception:
     ff_bins = []
 
+# _sqlite3.pyd needs sqlite3.dll next to it; make it explicit so no build misses it
+_sqlite = os.path.join(sys.base_prefix, "DLLs", "sqlite3.dll")
+_sqlite_bins = [(_sqlite, ".")] if os.path.exists(_sqlite) else []
+
 a = Analysis(
     ["run.py"],
     datas=[("dragshift/assets", "dragshift/assets")] + heif_datas,
-    binaries=heif_bins + ff_bins,
+    binaries=heif_bins + ff_bins + _sqlite_bins,
     hiddenimports=["win32com.client", "PySide6.QtNetwork", "AppKit", "Quartz", "objc",
                    "imageio_ffmpeg", "mutagen", "openpyxl", "yaml", "odf", "pptx",
                    "ebooklib", "bs4", "lxml", "qrcode", "cryptography",
@@ -39,7 +44,6 @@ a.binaries = [b for b in a.binaries if not any(d.lower() in b[0].lower() for d i
 a.datas = [d for d in a.datas if "translations" not in d[0].replace("\\", "/")]
 
 pyz = PYZ(a.pure)
-import sys
 IS_MAC = sys.platform == "darwin"
 common = dict(name="DragShift", console=False, upx=False)
 IS_LINUX = sys.platform.startswith("linux")
