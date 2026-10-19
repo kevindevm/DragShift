@@ -75,6 +75,8 @@ You can also right-click a file → **DragShift…**, use **Send to → DragShif
 | Emails (.eml) | TXT, HTML, PDF | **Extract attachments** |
 | Contacts & calendar (.vcf, .ics) | CSV, TXT, HTML | **Merge** (.vcf) |
 | Fonts (.ttf, .otf, .woff2) | PNG/TXT specimen, PDF, **WOFF/WOFF2** | **Specimen** · metadata |
+| Archives (.zip, .7z, .tar, .tar.gz) | **FOLDER** (extract), ZIP, TAR.GZ, 7Z | **List** contents |
+| Legacy Office (.doc, .xls, .ppt) | PDF vía LibreOffice | **LO PDF** (instala LO en Opcionales) |
 | Sheets (.xlsx, .csv, .sqlite) | CSV, XLSX, HTML, PDF, TXT, **JSON, VCF** | merge multi-hoja |
 | Text+code | … + **HTML→PDF real**, **MD→DOCX**, **JSON→CSV**, **SVG→PNG**, **PDF→HTML**, **CSV→VCF** | **Diff visual**, **Watermark**, **Remove BG** (solid/AI), **Favicon pack**, **QR logo** |
 | PDF merge | con TOC/bookmarks automáticos | **Storyboard** (video→filmstrip) |

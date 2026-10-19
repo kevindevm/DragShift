@@ -24,19 +24,21 @@ except ImportError:  # pragma: no cover
     import fitz  # type: ignore
 
 IMAGE_TARGETS = ["PNG", "JPG", "WEBP", "HEIC", "TIFF", "AVIF", "BMP", "PDF", "ICO", "GIF"]
-PDF_TARGETS = ["JPG", "PNG", "DOCX", "TXT", "HTML"]
+PDF_TARGETS = ["JPG", "PNG", "DOCX", "TXT", "HTML", "PPTX"]
 DOCX_TARGETS = ["PDF", "TXT", "HTML"]
 TEXT_TARGETS = ["PDF", "DOCX", "TXT", "HTML"]
 AUDIO_TARGETS = ["MP3", "WAV", "OGG", "OPUS", "FLAC", "M4A"]
 VIDEO_TARGETS = ["MP4", "WEBM", "MKV", "MP3", "WAV", "GIF", "PNG", "JPG", "SRT", "VTT"]
 SHEET_TARGETS = ["CSV", "XLSX", "HTML", "PDF", "TXT", "JSON", "VCF"]
-PRESENT_TARGETS = ["PDF", "TXT", "HTML"]
-EBOOK_TARGETS = ["TXT", "HTML", "PDF", "DOCX"]
-SUBTITLE_TARGETS = ["SRT", "VTT", "TXT"]
+PRESENT_TARGETS = ["PDF", "TXT", "HTML", "PPTX"]
+EBOOK_TARGETS = ["TXT", "HTML", "PDF", "DOCX", "EPUB"]
+SUBTITLE_TARGETS = ["SRT", "VTT", "TXT", "LRC"]
 NOTEBOOK_TARGETS = ["PY", "HTML", "TXT", "PDF"]
 EMAIL_TARGETS = ["TXT", "HTML", "PDF"]
 CONTACT_TARGETS = ["CSV", "TXT", "HTML"]
-FONT_TARGETS = ["PNG", "PDF", "TXT", "WOFF", "WOFF2"]
+FONT_TARGETS = ["PNG", "PDF", "TXT", "WOFF", "WOFF2", "TTF"]
+ARCHIVE_TARGETS = ["FOLDER", "ZIP", "TAR.GZ", "7Z"]
+LEGACY_TARGETS = ["PDF"]
 
 PIL_FORMAT = {"PNG": "PNG", "JPG": "JPEG", "WEBP": "WEBP", "HEIC": "HEIF", "TIFF": "TIFF",
               "AVIF": "AVIF", "BMP": "BMP", "PDF": "PDF", "ICO": "ICO", "GIF": "GIF"}
@@ -536,7 +538,8 @@ def targets_for(cat: str, src_ext: str) -> list[str]:
              "audio": AUDIO_TARGETS, "video": VIDEO_TARGETS, "sheet": SHEET_TARGETS,
              "presentation": PRESENT_TARGETS, "ebook": EBOOK_TARGETS,
              "subtitle": SUBTITLE_TARGETS, "notebook": NOTEBOOK_TARGETS,
-             "email": EMAIL_TARGETS, "contact": CONTACT_TARGETS, "font": FONT_TARGETS}
+             "email": EMAIL_TARGETS, "contact": CONTACT_TARGETS, "font": FONT_TARGETS,
+             "archive": ARCHIVE_TARGETS, "legacy": LEGACY_TARGETS}
     t = [x for x in table.get(cat, []) if x != cur]
     if cat == "text":
         low = src_ext
@@ -564,6 +567,9 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
             return pdf_to_html(src)
         if target == "DOCX":
             return pdf_to_docx(src)
+        if target == "PPTX":
+            from . import sheettools
+            return sheettools.pdf_to_pptx(src)
     if cat == "docx":
         if Path(src).suffix.lower() == ".odt":
             from . import sheettools
@@ -623,6 +629,43 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
         if target == "PDF":
             return sheettools.present_to_pdf(src)
     if cat == "ebook":
+        from . import nbtools
+        if Path(src).suffix.lower() == ".cbz":
+            if target == "PDF":
+                return nbtools.cbz_to_pdf(src)
+            if target == "EPUB":
+                return nbtools.cbz_to_epub(src)
+            raise ValueError(f"Can't convert CBZ to {target}")
+        if Path(src).suffix.lower() == ".fb2":
+            if target == "TXT":
+                return nbtools.fb2_to_txt(src)
+            if target == "HTML":
+                return nbtools.fb2_to_html(src)
+            if target == "PDF":
+                return nbtools.fb2_to_pdf(src)
+            if target == "EPUB":
+                return nbtools.fb2_to_epub(src)
+            if target == "DOCX":
+                h = nbtools.fb2_to_html(src)[0]
+                try:
+                    from .convert import html_to_pdf  # noqa
+                    from docx import Document as _D
+                    from bs4 import BeautifulSoup as _B
+                    soup = _B(h.read_text(encoding="utf-8"), "lxml")
+                    d = _D()
+                    for p in soup.find_all(["h1", "h2", "p"]):
+                        if p.name in ("h1", "h2"):
+                            d.add_heading(p.get_text(), level=1 if p.name == "h1" else 2)
+                        elif p.get_text(strip=True):
+                            d.add_paragraph(p.get_text())
+                    out = sibling(src, ext=".docx")
+                    d.save(out)
+                    return [out]
+                finally:
+                    try:
+                        h.unlink()
+                    except OSError:
+                        pass
         from . import sheettools
         try:
             import ebooklib
@@ -676,12 +719,13 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
             return nbtools.ipynb_to_pdf(src)
     if cat == "email":
         from . import nbtools
+        is_msg = Path(src).suffix.lower() == ".msg"
         if target == "TXT":
-            return nbtools.eml_to_txt(src)
+            return nbtools.msg_to_txt(src) if is_msg else nbtools.eml_to_txt(src)
         if target == "HTML":
-            return nbtools.eml_to_html(src)
+            return nbtools.msg_to_html(src) if is_msg else nbtools.eml_to_html(src)
         if target == "PDF":
-            return nbtools.eml_to_pdf(src)
+            return nbtools.msg_to_pdf(src) if is_msg else nbtools.eml_to_pdf(src)
     if cat == "contact":
         from . import nbtools
         if target == "CSV":
@@ -700,4 +744,14 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
             return nbtools.font_specimen(src, "PDF")
         if target in ("WOFF", "WOFF2"):
             return nbtools.font_convert(src, target)
+    if cat == "archive":
+        from . import archtools
+        if target == "FOLDER":
+            return [archtools.arch_extract(src)]
+        if target in ("ZIP", "TAR.GZ", "7Z"):
+            return [archtools.arch_create([src], target)]
+    if cat == "legacy":
+        if target == "PDF":
+            from . import engines
+            return [engines.libreoffice_pdf(src)]
     raise ValueError(f"Can't convert {cat} to {target}")

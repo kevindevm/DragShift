@@ -153,6 +153,81 @@ def eml_attachments(src: str | Path) -> list[Path]:
     return outs
 
 
+def _parse_msg(src: str | Path):
+    try:
+        import extract_msg
+    except Exception as e:
+        raise UserError(f"MSG support needs extract-msg: {e}")
+    try:
+        return extract_msg.Message(str(src))
+    except Exception as e:
+        raise UserError(f"Couldn't read Outlook message: {e}")
+
+
+def _msg_to_eml_fields(src: str | Path) -> tuple[str, str, str, str]:
+    m = _parse_msg(src)
+    try:
+        return (str(m.sender or ""), str(m.date or ""), str(m.subject or ""),
+                str(m.body or ""))
+    finally:
+        try:
+            m.close()
+        except Exception:
+            pass
+
+
+def msg_to_txt(src: str | Path) -> list[Path]:
+    sender, date, subject, body = _msg_to_eml_fields(src)
+    out = sibling(src, ext=".txt")
+    out.write_text(f"From: {sender}\nDate: {date}\nSubject: {subject}\n\n{body}", encoding="utf-8")
+    return [out]
+
+
+def msg_to_html(src: str | Path) -> list[Path]:
+    sender, date, subject, body = _msg_to_eml_fields(src)
+    out = sibling(src, ext=".html")
+    out.write_text(f"<!doctype html><html><head><meta charset='utf-8'></head><body>"
+                   f"<p><b>From:</b> {html.escape(sender)}<br>"
+                   f"<b>Subject:</b> {html.escape(subject)}</p>"
+                   f"<pre>{html.escape(body)}</pre></body></html>", encoding="utf-8")
+    return [out]
+
+
+def msg_to_pdf(src: str | Path) -> list[Path]:
+    h = msg_to_html(src)[0]
+    try:
+        out = sibling(src, ext=".pdf")
+        html_to_pdf(h.read_text(encoding="utf-8")[:30000], out)
+        return [out]
+    finally:
+        try:
+            h.unlink()
+        except OSError:
+            pass
+
+
+def msg_attachments(src: str | Path) -> list[Path]:
+    m = _parse_msg(src)
+    from .util import output_dir, unique_path
+    folder = unique_path(output_dir(src) / f"{Path(src).stem} attachments")
+    outs = []
+    try:
+        for att in m.attachments:
+            name = att.longFilename or att.shortFilename or "attachment.bin"
+            folder.mkdir(exist_ok=True)
+            p = unique_path(folder / str(name))
+            p.write_bytes(att.data)
+            outs.append(p)
+    finally:
+        try:
+            m.close()
+        except Exception:
+            pass
+    if not outs:
+        raise UserError("No attachments in this message.")
+    return outs
+
+
 # ---------------------------------------------------------------- contact (.vcf / .ics)
 def _unfold(text: str) -> list[str]:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -338,10 +413,66 @@ def font_convert(src: str | Path, target: str) -> list[Path]:
         f = TTFont(str(src))
     except Exception as e:
         raise UserError(f"Couldn't read font: {e}")
-    f.flavor = "woff2" if target == "WOFF2" else "woff"
+    if target == "TTF" and "CFF " in f:
+        f = _cff_to_ttf(f)
+    f.flavor = {"WOFF": "woff", "WOFF2": "woff2"}.get(target)
     out = sibling(src, ext="." + target.lower())
     f.save(out)
     return [out]
+
+
+def _cff_to_ttf(f):
+    """Convert CFF outlines to TrueType quadratic splines (in-memory)."""
+    try:
+        from fontTools.cu2qu.pens import Cu2QuPen
+        from fontTools.pens.ttGlyphPen import TTGlyphPen
+        from fontTools.ttLib import newTable
+    except Exception as e:
+        raise UserError(f"CFF conversion needs fontTools cu2qu: {e}")
+    glyph_order = f.getGlyphOrder()
+    cff = f["CFF "].cff
+    charstrings = cff[cff.fontNames[0]].CharStrings
+    glyf = newTable("glyf")
+    glyf.glyphOrder = glyph_order
+    glyf.glyphs = {}
+    for name in glyph_order:
+        tt_pen = TTGlyphPen(None)
+        cu_pen = Cu2QuPen(tt_pen, max_err=1.0, reverse_direction=True)
+        try:
+            charstrings[name].draw(cu_pen)
+            glyf.glyphs[name] = tt_pen.glyph()
+        except Exception:
+            tt_pen.moveTo((0, 0))
+            tt_pen.closePath()
+            glyf.glyphs[name] = tt_pen.glyph()
+    f["glyf"] = glyf
+    f["loca"] = newTable("loca")
+    try:
+        maxp = f["maxp"]
+        maxp.tableVersion = 0x00010000
+        for g in glyf.glyphs.values():
+            try:
+                g.recalcBounds(glyf)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    for tag in ("CFF ", "VORG"):
+        if tag in f:
+            del f[tag]
+    try:
+        gasp = newTable("gasp")
+        gasp.gaspRange = {65535: 10}
+        f["gasp"] = gasp
+    except Exception:
+        pass
+    try:
+        prep = newTable("prep")
+        prep.program = b"\xb8\x01\xff\x85\xb0"
+        f["prep"] = prep
+    except Exception:
+        pass
+    return f
 
 
 def font_specimen(src: str | Path, kind: str = "PNG") -> list[Path]:
@@ -366,4 +497,134 @@ def font_specimen(src: str | Path, kind: str = "PNG") -> list[Path]:
     else:
         out = sibling(src, "Specimen", ".png")
         im.save(out, "PNG")
+    return [out]
+
+
+# ---------------------------------------------------------------- comics (CBZ = zip of images)
+def _cbz_images(src: str | Path) -> list[tuple[str, bytes]]:
+    import zipfile
+    try:
+        zf = zipfile.ZipFile(src)
+        names = sorted(n for n in zf.namelist()
+                       if n.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"))
+                       and not n.startswith("__MACOSX"))
+        if not names:
+            raise UserError("No images in this comic.")
+        return [(n, zf.read(n)) for n in names]
+    except UserError:
+        raise
+    except Exception as e:
+        raise UserError(f"Couldn't read comic: {e}")
+
+
+def cbz_to_pdf(src: str | Path) -> list[Path]:
+    from PIL import Image
+    import io as _io
+    from .convert import flatten
+    pages = []
+    for _name, blob in _cbz_images(src):
+        im = flatten(Image.open(_io.BytesIO(blob)).convert("RGB"))
+        pages.append(im)
+    out = sibling(src, ext=".pdf")
+    pages[0].save(out, "PDF", resolution=150.0, save_all=True, append_images=pages[1:])
+    return [out]
+
+
+def cbz_to_epub(src: str | Path) -> list[Path]:
+    try:
+        from ebooklib import epub
+    except Exception as e:
+        raise UserError(f"Ebook support needs EbookLib: {e}")
+    book = epub.EpubBook()
+    book.set_title(Path(src).stem)
+    book.set_language("en")
+    items = []
+    for i, (name, blob) in enumerate(_cbz_images(src)):
+        ext = Path(name).suffix.lower().lstrip(".") or "jpg"
+        item = epub.EpubImage(uid=f"img{i}", file_name=f"img{i}.{ext}", content=blob)
+        book.add_item(item)
+        items.append(item)
+    chaps = []
+    for i, item in enumerate(items):
+        c = epub.EpubHtml(title=f"Page {i + 1}", file_name=f"p{i + 1}.xhtml")
+        c.content = f'<html><body><img src="{item.file_name}"/></body></html>'
+        book.add_item(c)
+        chaps.append(c)
+    book.toc = chaps
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.spine = ["nav"] + chaps
+    out = sibling(src, ext=".epub")
+    epub.write_epub(str(out), book)
+    return [out]
+
+
+# ---------------------------------------------------------------- FictionBook (.fb2 XML)
+def _fb2_texts(src: str | Path) -> tuple[str, list[str]]:
+    try:
+        from lxml import etree
+    except Exception as e:
+        raise UserError(f"FB2 support needs lxml: {e}")
+    try:
+        root = etree.parse(str(src)).getroot()
+    except Exception as e:
+        raise UserError(f"Couldn't parse FB2: {e}")
+    ns = {"f": "http://www.gribuser.ru/xml/fictionbook/2.0"}
+    title = " ".join(t.strip() for t in root.xpath("//f:book-title//text()", namespaces=ns)[:3])
+    paras = [" ".join(p.itertext()).strip()
+             for p in root.xpath("//f:body//f:p", namespaces=ns)]
+    paras = [p for p in paras if p]
+    if not paras:
+        raise UserError("No text in this FB2.")
+    return title or Path(src).stem, paras
+
+
+def fb2_to_txt(src: str | Path) -> list[Path]:
+    title, paras = _fb2_texts(src)
+    out = sibling(src, ext=".txt")
+    out.write_text(title + "\n\n" + "\n\n".join(paras) + "\n", encoding="utf-8")
+    return [out]
+
+
+def fb2_to_html(src: str | Path) -> list[Path]:
+    title, paras = _fb2_texts(src)
+    body = "".join(f"<p>{html.escape(p)}</p>" for p in paras[:5000])
+    out = sibling(src, ext=".html")
+    out.write_text(f"<!doctype html><html><head><meta charset='utf-8'>"
+                   f"<title>{html.escape(title)}</title></head><body>"
+                   f"<h1>{html.escape(title)}</h1>{body}</body></html>", encoding="utf-8")
+    return [out]
+
+
+def fb2_to_pdf(src: str | Path) -> list[Path]:
+    h = fb2_to_html(src)[0]
+    try:
+        out = sibling(src, ext=".pdf")
+        html_to_pdf(h.read_text(encoding="utf-8"), out)
+        return [out]
+    finally:
+        try:
+            h.unlink()
+        except OSError:
+            pass
+
+
+def fb2_to_epub(src: str | Path) -> list[Path]:
+    try:
+        from ebooklib import epub
+    except Exception as e:
+        raise UserError(f"Ebook support needs EbookLib: {e}")
+    title, paras = _fb2_texts(src)
+    book = epub.EpubBook()
+    book.set_title(title)
+    book.set_language("en")
+    c = epub.EpubHtml(title=title, file_name="text.xhtml")
+    c.content = "<html><body>" + "".join(f"<p>{html.escape(p)}</p>" for p in paras[:2000]) + "</body></html>"
+    book.add_item(c)
+    book.toc = [c]
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.spine = ["nav", c]
+    out = sibling(src, ext=".epub")
+    epub.write_epub(str(out), book)
     return [out]

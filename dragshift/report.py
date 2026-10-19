@@ -169,7 +169,8 @@ def summarize(action: str, srcs: list, outs: list, extra: str = "") -> Result:
                 "Palette": "Palette sampled", "Outline": "Outline extracted",
                 "Folder": "Folder scanned", "Remove BG": "Background removed",
                 "Watermark": "Watermarked", "Favicon": "Favicon pack",
-                "VisualDiff": "Images compared", "Storyboard": "Storyboard"}[name]
+                "VisualDiff": "Images compared", "Storyboard": "Storyboard",
+                "List": "Archive listed", "LO PDF": "Converted (LibreOffice)"}[name]
         return Result(verb, f"{o0.name} · {human_size(after)}", outs, srcs)
 
     # generic

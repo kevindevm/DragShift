@@ -19,6 +19,25 @@ PRESENT_TARGETS = ["PDF", "TXT", "HTML"]
 EBOOK_TARGETS = ["TXT", "HTML", "PDF", "DOCX"]
 
 
+def _rows_of_xls(src: str | Path) -> tuple[list[str], list[list]]:
+    """Excel 97-2003 via xlrd."""
+    try:
+        import xlrd
+    except Exception as e:
+        raise UserError(f"XLS support needs xlrd: {e}")
+    try:
+        book = xlrd.open_workbook(str(src))
+        sh = book.sheet_by_index(0)
+    except Exception as e:
+        raise UserError(f"Couldn't read spreadsheet: {e}")
+    rows = [[sh.cell_value(r, c) for c in range(sh.ncols)] for r in range(sh.nrows)]
+    if not rows:
+        return [], []
+    norm = lambda v: int(v) if isinstance(v, float) and v.is_integer() else ("" if v is None else v)
+    header = [str(norm(c)) for c in rows[0]]
+    return header, [[norm(c) for c in r] for r in rows[1:]]
+
+
 def _rows_of_xlsx(src: str | Path) -> tuple[list[str], list[list]]:
     try:
         from openpyxl import load_workbook
@@ -41,8 +60,8 @@ def sheet_to_csv(src: str | Path) -> list[Path]:
         out = sibling(src, "Normalized", ".csv")
         out.write_text(read_text(src).replace("\r\n", "\n"), encoding="utf-8")
         return [out]
-    if ext == ".xlsx":
-        header, rows = _rows_of_xlsx(src)
+    if ext in (".xlsx", ".xls"):
+        header, rows = _rows_of_xlsx(src) if ext == ".xlsx" else _rows_of_xls(src)
         out = sibling(src, ext=".csv")
         with out.open("w", encoding="utf-8", newline="") as f:
             w = csv.writer(f)
@@ -140,6 +159,8 @@ def sheet_to_html(src: str | Path) -> list[Path]:
     ext = Path(src).suffix.lower()
     if ext == ".xlsx":
         header, rows = _rows_of_xlsx(src)
+    elif ext == ".xls":
+        header, rows = _rows_of_xls(src)
     elif ext in (".sqlite", ".sqlite3", ".db"):
         csvp = sqlite_to_csv(src)[0]
         text = csvp.read_text(encoding="utf-8")
@@ -189,6 +210,8 @@ def sheet_to_json(src: str | Path) -> list[Path]:
     ext = Path(src).suffix.lower()
     if ext == ".xlsx":
         header, rows = _rows_of_xlsx(src)
+    elif ext == ".xls":
+        header, rows = _rows_of_xls(src)
     elif ext in (".sqlite", ".sqlite3", ".db"):
         csvp = sqlite_to_csv(src)[0]
         text = csvp.read_text(encoding="utf-8")
@@ -274,6 +297,41 @@ def odt_to_pdf(src: str | Path) -> list[Path]:
             h.unlink()
         except OSError:
             pass
+
+
+def pdf_to_pptx(src: str | Path) -> list[Path]:
+    """One picture per slide + page text in speaker notes."""
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches
+    except Exception as e:
+        raise UserError(f"Slides support needs python-pptx: {e}")
+    from .convert import fitz, open_pdf
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    blank = prs.slide_layouts[6]
+    with open_pdf(src) as doc:
+        for page in doc:
+            pix = page.get_pixmap(dpi=150, alpha=False)
+            from PIL import Image
+            im = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            import io as _io
+            buf = _io.BytesIO()
+            im.save(buf, "PNG")
+            buf.seek(0)
+            slide = prs.slides.add_slide(blank)
+            left = top = Inches(0.25)
+            max_w, max_h = Inches(12.833), Inches(7.0)
+            scale = min(max_w / pix.width, max_h / pix.height, 1.0)
+            slide.shapes.add_picture(buf, left, top, width=int(pix.width * scale), height=int(pix.height * scale))
+            try:
+                slide.notes_slide.placeholders[1].text = page.get_text("text")[:2000]
+            except Exception:
+                pass
+    out = sibling(src, ext=".pptx")
+    prs.save(out)
+    return [out]
 
 
 def yaml_to_toml(src: str | Path) -> list[Path]:

@@ -78,6 +78,7 @@ NOTEBOOK_TOOLS = ["Strip", "Code"]
 EMAIL_TOOLS = ["Attach"]
 CONTACT_TOOLS = ["Merge"]
 FONT_TOOLS = ["Specimen"]
+ARCHIVE_TOOLS = ["List"]
 PRESETS = {
     "web-small": {"tool": "Compress", "cats": ("image",), "q": 70, "side": 1920, "fmt": "JPG", "strip": True},
     "voice-note": {"tool": "Voice", "cats": ("audio", "video")},
@@ -219,6 +220,11 @@ class DragShiftApp(QObject):
 
         self.tray = QSystemTrayIcon(make_tray_icon(), self)
         self.tray.setToolTip(f"{APP_NAME} — press {self.trigger_label()} while dragging a file")
+        try:
+            from . import watch as _watch
+            self.hotfolder = _watch.HotFolder(self.settings, self.submit)
+        except Exception:
+            self.hotfolder = None
         m = QMenu()
         m.setStyleSheet(glass.QSS)
         self.act_enabled = QAction("Enabled", m, checkable=True, checked=True)
@@ -244,6 +250,7 @@ class DragShiftApp(QObject):
         m.addSeparator()
         m.addAction("Backup settings…", self._backup_settings)
         m.addAction("Restore settings…", self._restore_settings)
+        m.addAction("Check for updates…", self._check_updates)
         m.addSeparator()
         m.addAction(f"Quit {APP_NAME}", self.qapp.quit)
         self.tray_menu = m
@@ -365,6 +372,17 @@ class DragShiftApp(QObject):
         elif cat == "font":
             rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Specimen sheet"))
                               for n in FONT_TOOLS]
+        elif cat == "archive":
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "List contents"))
+                              for n in ARCHIVE_TOOLS]
+        elif cat == "legacy":
+            from . import engines as _eng
+            if _eng._soffice() is not None:
+                rings["Tools"] = [Item("LO PDF", "📄", key="tool:LO PDF",
+                                       hint="Convert with LibreOffice")]
+            else:
+                rings["Tools"] = [Item("Get LO", "⬇", key="tool:Get LO",
+                                       hint="Need LibreOffice")]
         # presets ring for images/audio
         for _pn in presets_for(cat):
             rings.setdefault("Presets", []).append(
@@ -601,6 +619,31 @@ class DragShiftApp(QObject):
                 self.submit("tool:Hash", paths, lambda: [filetools.sha256_file(p) for p in paths],
                             "Hashing…")
             return
+        if cat == "archive":
+            from . import archtools
+
+            def _arch_list(p: str):
+                from pathlib import Path as _P
+                out = _P(p).parent / (_P(p).stem + " contents.txt")
+                from .util import unique_path
+                out = unique_path(out)
+                out.write_text("\n".join(archtools.arch_list(p)), encoding="utf-8")
+                return out
+
+            if name == "List":
+                self.submit("tool:List", paths, lambda: [_arch_list(p) for p in paths], "Listing…")
+            return
+        if cat == "legacy":
+            from . import engines as _eng
+            if name == "LO PDF":
+                self.submit("tool:LO PDF", paths, lambda: [_eng.libreoffice_pdf(p) for p in paths],
+                            "Converting (LibreOffice)…")
+            elif name == "Get LO":
+                from PySide6.QtGui import QDesktopServices
+                from PySide6.QtCore import QUrl
+                QDesktopServices.openUrl(QUrl("https://www.libreoffice.org/download/download-libreoffice/"))
+                self.toasts.info("LibreOffice", "Install it, then use Convert → PDF.")
+            return
         if cat == "subtitle":
             from . import texttools
             if name == "Shift":
@@ -631,9 +674,14 @@ class DragShiftApp(QObject):
             return
         if cat == "email":
             from . import nbtools
+            from pathlib import Path as _P
+
+            def _attach(p: str):
+                return nbtools.msg_attachments(p) if _P(p).suffix.lower() == ".msg" else nbtools.eml_attachments(p)
+
             if name == "Attach":
                 self.submit("tool:Attach", paths,
-                            lambda: [o for p in paths for o in nbtools.eml_attachments(p)],
+                            lambda: [o for p in paths for o in _attach(p)],
                             "Extracting…")
             return
         if cat == "contact":
@@ -824,6 +872,32 @@ class DragShiftApp(QObject):
     def _settings_changed(self):
         self.watcher.set_key(self.settings.get("trigger"))
         self.tray.setToolTip(f"{APP_NAME} — press {self.trigger_label()} while dragging a file")
+        try:
+            if getattr(self, "hotfolder", None) is not None:
+                on = bool(self.settings.get("hot_enable")) and bool(str(self.settings.get("hot_src") or ""))
+                if on and not self.hotfolder.timer.isActive():
+                    self.hotfolder.timer.start()
+                elif not on and self.hotfolder.timer.isActive():
+                    self.hotfolder.timer.stop()
+        except Exception:
+            pass
+
+    def _check_updates(self, auto: bool = False):
+        try:
+            from . import updater
+            newer, tag, url = updater.check()
+            if newer:
+                if auto:
+                    self.toasts.info("Update available", f"{tag} — tray menu → Check for updates to open it.")
+                    self._update_url = url
+                else:
+                    from PySide6.QtGui import QDesktopServices
+                    from PySide6.QtCore import QUrl
+                    QDesktopServices.openUrl(QUrl(url or "https://github.com/kevindevm/DragShift/releases/latest"))
+            elif not auto:
+                self.toasts.info("Up to date", f"DragShift {VERSION} is the newest release.")
+        except Exception:
+            pass
 
     def show_welcome(self):
         self.open_window(WelcomeWindow(self.settings, self.trigger_label()))
@@ -1002,6 +1076,7 @@ def main(argv: list[str] | None = None) -> int:
     elif "--quiet" not in argv:
         QTimer.singleShot(400, lambda: app.toasts.info(
             "DragShift is running", f"Drag any file, then press {app.trigger_label()}."))
+    QTimer.singleShot(15000, lambda: app._check_updates(auto=True))
     return qapp.exec()
 
 
@@ -1101,6 +1176,12 @@ def selftest() -> int:
             em = Path(d) / "m.eml"
             em.write_text("From: a@b.c\nSubject: hi\nContent-Type: text/plain\n\nbody\n")
             convert.convert(em, "email", "TXT")
+            zf = Path(d) / "a.zip"
+            import zipfile as _zf
+            with _zf.ZipFile(zf, "w") as _z:
+                _z.writestr("x.txt", "hi")
+            from . import archtools
+            archtools.arch_extract(zf)
             try:
                 from pptx import Presentation
                 prs = Presentation()

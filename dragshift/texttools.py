@@ -227,7 +227,82 @@ def _secs_to_ts(secs: float, dot: bool) -> str:
     return out.replace(".", "." if dot else ",")
 
 
+def parse_cues(text: str) -> list[tuple[float, float, str]]:
+    """Best-effort timed lines from SRT/VTT/ASS/LRC/SAMI/TTML."""
+    cues: list[tuple[float, float, str]] = []
+    # LRC: [mm:ss.xx] line
+    for m in re.finditer(r"\[(\d+):([\d.]+)\]([^\n]*)", text):
+        try:
+            cues.append((int(m.group(1)) * 60 + float(m.group(2)),
+                         int(m.group(1)) * 60 + float(m.group(2)) + 2.0, m.group(3).strip()))
+        except ValueError:
+            pass
+    if cues:
+        return sorted(cues)
+    # SAMI: <SYNC Start=ms>text
+    for m in re.finditer(r"<SYNC\s+Start=(\d+)>(.*?)(?=<SYNC|</BODY|$)", text, re.I | re.S):
+        body = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+        if body and body != "&nbsp;":
+            s = int(m.group(1)) / 1000.0
+            cues.append((s, s + 2.0, body))
+    if cues:
+        return sorted(cues)
+    # TTML: <p begin="..s" end="..s"> (also h:mm:ss)
+    def _tt(t: str) -> float:
+        t = t.strip()
+        if t.endswith("s") and ":" not in t:
+            return float(t[:-1])
+        return _ts_to_secs(t)
+    for m in re.finditer(r'<p[^>]*begin="([^"]+)"[^>]*end="([^"]+)"[^>]*>(.*?)</p>', text, re.S):
+        try:
+            s, e = _tt(m.group(1)), _tt(m.group(2))
+            body = re.sub(r"<[^>]+>", "", m.group(3)).strip()
+            if body:
+                cues.append((s, e, body))
+        except ValueError:
+            pass
+    if cues:
+        return sorted(cues)
+    # SRT/VTT/ASS cue blocks with -->
+    for m in re.finditer(r"([\d:.,]+)\s*-->\s*([\d:.,]+)\s*\n((?:(?!\n\s*\n).)*)", text, re.S):
+        try:
+            lines = [ln.strip() for ln in m.group(3).splitlines()
+                     if ln.strip() and not re.match(r"^\d+$", ln.strip())]
+            body = re.sub(r"<[^>]+>", "", "\n".join(lines)).strip()
+            body = re.sub(r"\{[^}]*\}", "", body).strip()
+            if body:
+                cues.append((_ts_to_secs(m.group(1)), _ts_to_secs(m.group(2)), body))
+        except ValueError:
+            pass
+    return sorted(cues)
+
+
 def subtitles_convert(src: str | Path, target: str) -> list[Path]:
+    from .util import UserError
+    target = target.upper()
+    if target == "LRC":
+        cues = parse_cues(_check_size(src).replace("\r\n", "\n"))
+        if not cues:
+            raise UserError("No timed lines found.")
+        out = sibling(src, ext=".lrc")
+        lines = [f"[{int(s // 60):02d}:{s % 60:05.2f}]{t.replace(chr(10), ' ')}" for s, _, t in cues]
+        out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return [out]
+    if Path(src).suffix.lower() in (".lrc", ".smi", ".ttml"):
+        cues = parse_cues(_check_size(src).replace("\r\n", "\n"))
+        if not cues:
+            raise UserError("No timed lines found.")
+        dot = target == "VTT"
+        out = sibling(src, ext="." + target.lower())
+        if target == "VTT":
+            body = "\n\n".join(f"{_secs_to_ts(s, True)} --> {_secs_to_ts(e, True)}\n{t}" for s, e, t in cues)
+            out.write_text("WEBVTT\n\n" + body + "\n", encoding="utf-8")
+        else:
+            body = []
+            for i, (s, e, t) in enumerate(cues, 1):
+                body += [str(i), f"{_secs_to_ts(s, False)} --> {_secs_to_ts(e, False)}", t, ""]
+            out.write_text("\n".join(body).strip() + "\n", encoding="utf-8")
+        return [out]
     """SRT <-> VTT (+ ASS/SSA/LRC best-effort via timestamp rewrite)."""
     target = target.upper()
     text = _check_size(src).replace("\r\n", "\n")

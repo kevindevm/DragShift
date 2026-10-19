@@ -20,11 +20,14 @@ TEXT_EXTS = {".txt", ".md", ".markdown", ".log",
              ".vue", ".svelte", ".sh", ".bash", ".zsh", ".ps1",
              ".bat", ".cmd", ".sql", ".css", ".scss", ".less",
              ".gradle", ".cmake", ".htaccess", ".html", ".htm"}
-SUBTITLE_EXTS = {".srt", ".vtt", ".ass", ".ssa", ".lrc"}
+SUBTITLE_EXTS = {".srt", ".vtt", ".ass", ".ssa", ".lrc", ".smi", ".ttml"}
 NOTEBOOK_EXTS = {".ipynb"}
-EMAIL_EXTS = {".eml", ".emlx"}
+EMAIL_EXTS = {".eml", ".emlx", ".msg"}
 CONTACT_EXTS = {".vcf", ".vcard", ".ics"}
 FONT_EXTS = {".ttf", ".otf", ".woff", ".woff2", ".eot"}
+ARCHIVE_EXTS = {".zip", ".7z", ".tar", ".tgz", ".tbz", ".txz", ".gz", ".bz2", ".xz", ".rar",
+                ".cab", ".iso"}
+LEGACY_EXTS = {".doc", ".xls", ".ppt"}
 CSV_EXTS = {".csv", ".tsv", ".tab", ".psv"}
 AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".oga", ".opus", ".flac", ".m4a", ".aac",
               ".wma", ".aiff", ".aif"}
@@ -32,7 +35,7 @@ VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".mkv", ".webm", ".avi", ".mpg", ".mpeg",
               ".wmv", ".flv", ".3gp"}
 SHEET_EXTS = {".xlsx", ".ods", ".sqlite", ".sqlite3", ".db"}
 PRESENT_EXTS = {".pptx", ".odp"}
-EBOOK_EXTS = {".epub"}
+EBOOK_EXTS = {".epub", ".cbz", ".fb2"}
 
 # Exact file names (lowercase) that are plain text despite no (or odd) extension.
 TEXT_NAMES = {
@@ -59,6 +62,9 @@ def category(path: str | Path) -> str | None:
     if base in TEXT_BASENAMES:
         return "text"
     ext = Path(path).suffix.lower()
+    low = Path(path).name.lower()
+    if low.endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
+        return "archive"
     if not ext:
         # .env / .gitignore have no suffix (caught above); other extensionless
         # files (LICENSE, README, TODO) are plain text too.
@@ -87,6 +93,10 @@ def category(path: str | Path) -> str | None:
         return "contact"
     if ext in FONT_EXTS:
         return "font"
+    if ext in ARCHIVE_EXTS:
+        return "archive"
+    if ext in LEGACY_EXTS:
+        return "legacy"
     if ext in PRESENT_EXTS:
         return "presentation"
     if ext in EBOOK_EXTS:

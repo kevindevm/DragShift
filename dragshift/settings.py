@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel,
-                               QPushButton, QSlider, QVBoxLayout)
+                               QLineEdit, QPushButton, QSlider, QVBoxLayout)
 
 from . import __version__
 from .util import CONFIG
@@ -29,6 +30,9 @@ DEFAULTS = {
     "high_contrast": False,
     "font_scale": 100,
     "bg_mode": "solid",
+    "hot_enable": False,
+    "hot_src": "",
+    "hot_to": "PDF",
     "trigger": "shift",
     "welcomed": False,
 }
@@ -56,7 +60,8 @@ class Settings:
 
     def apply(self):
         for k in ("output", "jpg_quality", "pdf_dpi", "audio_bitrate", "video_crf", "thumb_sec",
-                  "toast_ms", "hub_ms", "high_contrast", "font_scale", "bg_mode"):
+                  "toast_ms", "hub_ms", "high_contrast", "font_scale", "bg_mode",
+                  "hot_enable", "hot_src", "hot_to"):
             CONFIG[k] = self.get(k)
 
 
@@ -219,6 +224,29 @@ class SettingsWindow(GlassWindow):
         grid.addWidget(self.bgm, r, 1)
         r += 1
 
+        grid.addWidget(QLabel("Watch folder"), r, 0)
+        wrow = QHBoxLayout()
+        self.hot = QCheckBox("Auto-convert new files")
+        self.hot.setChecked(bool(self.s.get("hot_enable")))
+        self.hot.toggled.connect(lambda v: self._save("hot_enable", bool(v)))
+        wrow.addWidget(self.hot)
+        self.hot_src = QLineEdit(str(self.s.get("hot_src") or ""))
+        self.hot_src.setPlaceholderText(r"C:\Watch or ~/Watch")
+        self.hot_src.editingFinished.connect(lambda: self._save("hot_src", self.hot_src.text()))
+        wrow.addWidget(self.hot_src, 1)
+        self.hot_to = combo([("PDF", "→ PDF"), ("PNG", "→ PNG"), ("JPG", "→ JPG"), ("TXT", "→ TXT"),
+                             ("MP3", "→ MP3"), ("ZIP", "→ ZIP")], self.s.get("hot_to"))
+        self.hot_to.currentIndexChanged.connect(lambda _: self._save("hot_to", self.hot_to.currentData()))
+        wrow.addWidget(self.hot_to)
+        grid.addLayout(wrow, r, 1)
+        r += 1
+
+        opt_btn = QPushButton("Opcionales: motores descargables…")
+        opt_btn.setToolTip("FFmpeg, IA, Pandoc, LibreOffice: estado, instalar, quitar")
+        opt_btn.clicked.connect(lambda: self._open_engines())
+        grid.addWidget(opt_btn, r, 1)
+        r += 1
+
         if IS_WIN or IS_MAC or IS_LINUX:
             self.auto = QCheckBox("Start DragShift with Windows" if IS_WIN else "Open DragShift at login")
             self.auto.setChecked(autostart_enabled())
@@ -246,6 +274,10 @@ class SettingsWindow(GlassWindow):
         foot.addWidget(done)
         self.body.addLayout(foot)
 
+    def _open_engines(self):
+        w = EnginesWindow()
+        w.show()
+
     def _save(self, key, value):
         self.s.set(key, value)
         self.changed.emit()
@@ -263,6 +295,128 @@ class SettingsWindow(GlassWindow):
             if k in DEFAULTS:
                 self.s.set(k, v)
         self.apply()
+
+
+class EnginesWindow(GlassWindow):
+    """Opcionales: estado e instalación de motores descargables (estilo Filee)."""
+
+    def __init__(self):
+        super().__init__("Motores opcionales", size=(620, 460))
+        from . import engines as _eng
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
+        r = 0
+        for e in _eng.registry():
+            try:
+                state, detail = _eng.status(e)
+            except Exception:
+                state, detail = "missing", ""
+            name = QLabel(f"<b>{e.name}</b> <i>({e.kind}, {e.size})</i>")
+            name.setWordWrap(True)
+            grid.addWidget(name, r, 0)
+            st = QLabel("✓ listo" if state == "ready" else "○ no instalado")
+            st.setObjectName("dim" if state != "ready" else "good")
+            grid.addWidget(st, r, 1)
+            r += 1
+            info = QLabel((e.desc + " " + (detail or e.note or "")).strip())
+            info.setObjectName("dim")
+            info.setWordWrap(True)
+            grid.addWidget(info, r, 0, 1, 2)
+            r += 1
+            row = QHBoxLayout()
+            if e.id == "pandoc":
+                b = QPushButton("Descargar e instalar")
+                b.clicked.connect(lambda _=False, b=b: self._install_pandoc(b))
+                row.addWidget(b)
+            elif e.id == "ai-bg":
+                b = QPushButton("Descargar modelo IA (~176 MB)")
+                b.clicked.connect(lambda _=False, b=b: self._install_ai(b))
+                row.addWidget(b)
+            elif e.id == "libreoffice":
+                b = QPushButton("Elegir carpeta…")
+                b.clicked.connect(self._locate_lo)
+                row.addWidget(b)
+                b2 = QPushButton("Descargar LibreOffice…")
+                b2.clicked.connect(self._get_lo)
+                row.addWidget(b2)
+            row.addStretch(1)
+            if e.id in ("pandoc", "ai-bg", "libreoffice"):
+                grid.addLayout(row, r, 0, 1, 2)
+                r += 1
+            grid.addWidget(QLabel(""), r, 0)
+            r += 1
+        self.body.addLayout(grid)
+        self.body.addStretch(1)
+        foot = QHBoxLayout()
+        foot.addStretch(1)
+        done = QPushButton("Cerrar")
+        done.setObjectName("primary")
+        done.clicked.connect(self.close)
+        foot.addWidget(done)
+        self.body.addLayout(foot)
+
+    def _install_pandoc(self, btn):
+        btn.setEnabled(False)
+        btn.setText("Descargando…")
+        try:
+            from . import engines as _eng
+            import urllib.request
+            import zipfile
+            import tarfile
+            import shutil
+            url = (_eng.PANDOC_URLS.get("win32" if sys.platform == "win32"
+                                        else "darwin" if sys.platform == "darwin" else "linux")[0])
+            if not url:
+                raise RuntimeError("Sin URL para esta plataforma")
+            dest = _eng.engines_root() / "pandoc"
+            dest.mkdir(parents=True, exist_ok=True)
+            import tempfile
+            tmp = Path(tempfile.mkdtemp()) / Path(url).name
+            urllib.request.urlretrieve(url, tmp)
+            if str(tmp).endswith(".zip"):
+                with zipfile.ZipFile(tmp) as z:
+                    z.extractall(dest)
+            else:
+                with tarfile.open(tmp) as t:
+                    t.extractall(dest, filter="data")
+            btn.setText("Instalado ✓ (reinicia)")
+        except Exception as e:
+            btn.setText("Reintentar")
+            btn.setEnabled(True)
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Pandoc", f"No se pudo descargar:\n{e}")
+
+    def _install_ai(self, btn):
+        btn.setEnabled(False)
+        btn.setText("Descargando… (~176 MB)")
+        try:
+            from . import bgremove
+            bgremove.ensure_onnxruntime()
+            bgremove.ensure_model()
+            btn.setText("Instalado ✓")
+        except Exception as e:
+            btn.setText("Reintentar")
+            btn.setEnabled(True)
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Modelo IA", str(e))
+
+    def _locate_lo(self):
+        from PySide6.QtWidgets import QFileDialog
+        d = QFileDialog.getExistingDirectory(self, "Carpeta de LibreOffice (program)")
+        if d:
+            from PySide6.QtWidgets import QMessageBox
+            import os as _os
+            cand = Path(d) / ("soffice.exe" if sys.platform == "win32" else "soffice")
+            if cand.exists():
+                QMessageBox.information(self, "LibreOffice", f"Detectado: {cand}\nYa puedes usar Convert → PDF en DOC/XLS/PPT.")
+            else:
+                QMessageBox.warning(self, "LibreOffice", "No encontré soffice ahí.")
+
+    def _get_lo(self):
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl("https://www.libreoffice.org/download/download-libreoffice/"))
 
 
 class WelcomeWindow(GlassWindow):

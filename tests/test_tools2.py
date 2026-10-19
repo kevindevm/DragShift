@@ -10,7 +10,8 @@ def test_text_names_and_targets(tmp_path):
     for name in (".env", ".gitignore", "Dockerfile", "Makefile", "LICENSE", "README"):
         assert category(str(tmp_path / name)) == "text"
     assert category(str(tmp_path / "a.py")) == "text"
-    assert category(str(tmp_path / "x.zip")) is None
+    assert category(str(tmp_path / "x.zip")) == "archive"
+    assert category(str(tmp_path / "x.rar")) == "archive"
     assert "TXT" in convert.targets_for("text", ".env")
     assert "HTML" in convert.targets_for("text", ".md")
 
@@ -218,9 +219,6 @@ def test_v5_conversions(tmp_path):
     t = tmp_path / "q.txt"
     t.write_text("hello")
     assert filetools.qr_with_logo(t, im2).suffix == ".png"
-
-
-def test_presets_and_ai_status():
     from dragshift.app import presets_for
     assert presets_for("image") == ["web-small"]
     assert presets_for("audio") == ["voice-note"]
@@ -253,3 +251,54 @@ def test_ring_order_stable_for_e2e(tmp_path):
     r2 = DragShiftApp.build_rings(None, [str(a)])
     assert [i.label for i in r1["Convert"]] == [i.label for i in r2["Convert"]]
     assert [i.label for i in r1["Tools"]] == [i.label for i in r2["Tools"]]
+
+
+def test_filee_batch(tmp_path):
+    from dragshift import archtools, engines, nbtools, updater
+    from dragshift.util import category
+    assert category(str(tmp_path / "a.7z")) == "archive"
+    assert category(str(tmp_path / "a.tar.gz")) == "archive"
+    assert category(str(tmp_path / "d.doc")) == "legacy"
+    f1 = tmp_path / "f1.txt"
+    f1.write_text("hello")
+    z = archtools.arch_create([str(f1)], "ZIP")
+    assert z.suffix == ".zip"
+    out = archtools.arch_extract(z)
+    assert (out / "f1.txt").read_text() == "hello"
+    assert "f1.txt" in archtools.arch_list(z)
+    tgz = archtools.arch_create([str(f1)], "TAR.GZ")
+    assert archtools.arch_extract(tgz).exists()
+    z7 = archtools.arch_create([str(f1)], "7Z")
+    assert archtools.arch_extract(z7).exists()
+    from PIL import Image
+    im = tmp_path / "p.png"
+    Image.new("RGB", (64, 48), (10, 20, 30)).save(im)
+    import zipfile
+    cbz = tmp_path / "c.cbz"
+    with zipfile.ZipFile(cbz, "w") as zf:
+        zf.write(im, "p01.png")
+    assert category(str(cbz)) == "ebook"
+    assert convert.convert(cbz, "ebook", "PDF")[0].suffix == ".pdf"
+    fb = tmp_path / "b.fb2"
+    fb.write_text('<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
+                  '<body><section><p>Hola</p></section></body></FictionBook>', encoding="utf-8")
+    assert "Hola" in convert.convert(fb, "ebook", "TXT")[0].read_text()
+    assert "PDF" in convert.targets_for("legacy", ".doc")
+    pdf = convert.convert(im, "image", "PDF")[0]
+    assert convert.convert(pdf, "pdf", "PPTX")[0].suffix == ".pptx"
+    lrc = tmp_path / "s.lrc"
+    lrc.write_text("[00:01.00]Hello\n[00:03.00]World\n")
+    assert category(str(lrc)) == "subtitle"
+    v = convert.convert(lrc, "subtitle", "VTT")[0]
+    assert "WEBVTT" in v.read_text()
+    import shutil
+    from pathlib import Path as _P
+    arial = _P("C:/Windows/Fonts/arial.ttf")
+    if arial.exists():
+        w = nbtools.font_convert(arial, "WOFF")[0]
+        assert w.suffix == ".woff"
+        assert nbtools.font_info(arial)[0].exists()
+    ids = [e.id for e in engines.registry()]
+    assert {"ffmpeg", "libreoffice", "ai-bg", "office", "pandoc"} <= set(ids)
+    assert updater._norm("v1.2.0") > updater._norm("1.1.0")
+    assert updater._norm("1.10.0") > updater._norm("1.2.0")
