@@ -24,6 +24,10 @@ DEFAULTS = {
     "audio_bitrate": "192k",
     "video_crf": 23,
     "thumb_sec": 1,
+    "toast_ms": 6500,
+    "hub_ms": 420,
+    "high_contrast": False,
+    "font_scale": 100,
     "mru": {},
     "trigger": "shift",
     "welcomed": False,
@@ -51,7 +55,8 @@ class Settings:
         self.apply()
 
     def apply(self):
-        for k in ("output", "jpg_quality", "pdf_dpi", "audio_bitrate", "video_crf", "thumb_sec"):
+        for k in ("output", "jpg_quality", "pdf_dpi", "audio_bitrate", "video_crf", "thumb_sec",
+                  "toast_ms", "hub_ms", "high_contrast", "font_scale"):
             CONFIG[k] = self.get(k)
 
 
@@ -161,6 +166,30 @@ class SettingsWindow(GlassWindow):
         self.dpi = combo(DPIS, self.s.get("pdf_dpi"))
         self.dpi.currentIndexChanged.connect(lambda _: self._save("pdf_dpi", self.dpi.currentData()))
         grid.addWidget(self.dpi, r, 1)
+        r += 1
+
+        grid.addWidget(QLabel("Toast duration"), r, 0)
+        self.toast = combo([(4000, "4 s"), (6500, "6.5 s"), (10000, "10 s")], self.s.get("toast_ms"))
+        self.toast.currentIndexChanged.connect(lambda _: self._save("toast_ms", self.toast.currentData()))
+        grid.addWidget(self.toast, r, 1)
+        r += 1
+
+        grid.addWidget(QLabel("Hub ring delay"), r, 0)
+        self.hub = combo([(250, "Fast"), (420, "Default"), (700, "Slow")], self.s.get("hub_ms"))
+        self.hub.currentIndexChanged.connect(lambda _: self._save("hub_ms", self.hub.currentData()))
+        grid.addWidget(self.hub, r, 1)
+        r += 1
+
+        self.hc = QCheckBox("High contrast menu text")
+        self.hc.setChecked(bool(self.s.get("high_contrast")))
+        self.hc.toggled.connect(lambda v: self._save("high_contrast", bool(v)))
+        grid.addWidget(self.hc, r, 1)
+        r += 1
+
+        grid.addWidget(QLabel("Menu text size"), r, 0)
+        self.fs = combo([(90, "Small"), (100, "Default"), (120, "Large")], self.s.get("font_scale"))
+        self.fs.currentIndexChanged.connect(lambda _: self._save("font_scale", self.fs.currentData()))
+        grid.addWidget(self.fs, r, 1)
         r += 1
 
         if IS_WIN or IS_MAC or IS_LINUX:

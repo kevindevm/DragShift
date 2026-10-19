@@ -152,3 +152,63 @@ def video_mute(src: str | Path) -> Path:
         _run([_ffmpeg(), "-y", "-i", str(src), "-an", "-c:v", "libx264",
               "-crf", "23", "-preset", "veryfast", str(out)])
     return out
+
+
+def concat_same(srcs: list[str | Path]) -> Path:
+    """Join same-extension media with the concat demuxer (no re-encode)."""
+    import tempfile
+    if len(srcs) < 2:
+        raise UserError("Select at least 2 files to join.")
+    exts = {Path(s).suffix.lower() for s in srcs}
+    if len(exts) != 1:
+        raise UserError("Join needs the same format for every file (e.g. all .mp3).")
+    lst = Path(tempfile.mkdtemp()) / "list.txt"
+    lst.write_text("".join(f"file '{Path(p).resolve()}'\n" for p in srcs), encoding="utf-8")
+    out = sibling(srcs[0], "Joined", exts.pop())
+    _run([_ffmpeg(), "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(out)])
+    return out
+
+
+def extract_subs(src: str | Path, fmt: str = "srt") -> Path:
+    fmt = "vtt" if str(fmt).lower() == "vtt" else "srt"
+    out = sibling(src, "Subs", "." + fmt)
+    try:
+        _run([_ffmpeg(), "-y", "-i", str(src), "-map", "0:s:0", str(out)])
+    except UserError as e:
+        raise UserError(f"No subtitles found in this file. ({e})")
+    return out
+
+
+LOUD_PRESETS = {"Podcast": "I=-16:TP=-1.5:LRA=11", "Music": "I=-14:TP=-1:LRA=11",
+                "Broadcast": "I=-23:TP=-2:LRA=7"}
+
+
+def loudnorm(src: str | Path, preset: str = "Podcast") -> Path:
+    spec = LOUD_PRESETS.get(preset, LOUD_PRESETS["Podcast"])
+    is_audio = Path(src).suffix.lower() in {".mp3", ".wav", ".ogg", ".oga", ".opus",
+                                            ".flac", ".m4a", ".aac"}
+    out = sibling(src, f"Loud {preset}", ".mp3" if is_audio else ".mp4")
+    if is_audio:
+        _run([_ffmpeg(), "-y", "-i", str(src), "-af", f"loudnorm={spec}",
+              "-c:a", "libmp3lame", "-b:a", "192k", str(out)])
+    else:
+        _run([_ffmpeg(), "-y", "-i", str(src), "-af", f"loudnorm={spec}",
+              "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", str(out)])
+    return out
+
+
+def trim_media(src: str | Path, start: float, end: float) -> Path:
+    if end <= start or start < 0:
+        raise UserError("End must be after start (seconds, e.g. 5 → 20).")
+    dur = end - start
+    is_audio = Path(src).suffix.lower() in {".mp3", ".wav", ".ogg", ".oga", ".opus",
+                                            ".flac", ".m4a", ".aac"}
+    out = sibling(src, "Trim", Path(src).suffix.lower())
+    if is_audio:
+        _run([_ffmpeg(), "-y", "-ss", str(start), "-i", str(src), "-t", str(dur),
+              "-c:a", "libmp3lame", "-b:a", "128k", str(out)])
+    else:
+        _run([_ffmpeg(), "-y", "-ss", str(start), "-i", str(src), "-t", str(dur),
+              "-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+              "-c:a", "aac", "-b:a", "128k", str(out)])
+    return out

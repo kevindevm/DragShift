@@ -152,12 +152,15 @@ def summarize(action: str, srcs: list, outs: list, extra: str = "") -> Result:
         return Result(verb, f"{o0.name} · {human_size(after)}", outs, srcs)
 
     if name in ("Voice", "Sample", "CleanTags", "Mute", "ZIP", "Hash", "B64", "QR",
-                "Contact", "GIF", "Playlist", "Diff", "Portfolio", "SplitFile"):
+                "Contact", "GIF", "Playlist", "Diff", "Portfolio", "SplitFile",
+                "Join", "Subs", "Loud", "Trim"):
         verb = {"Voice": "Voice MP3", "Sample": "Sampled", "CleanTags": "Metadata cleaned",
                 "Mute": "Muted", "ZIP": f"Zipped {len(srcs)} files", "Hash": "Hashed (SHA-256)",
                 "B64": "Base64 encoded", "QR": "QR code", "Contact": "Contact sheet",
                 "GIF": "Animated GIF", "Playlist": "Playlist .m3u", "Diff": "Diff HTML",
-                "Portfolio": "Portfolio PDF", "SplitFile": "Split"}[name]
+                "Portfolio": "Portfolio PDF", "SplitFile": "Split",
+                "Join": "Joined media", "Subs": "Subtitles extracted",
+                "Loud": "Loudness normalized", "Trim": "Trimmed"}[name]
         return Result(verb, f"{o0.name} · {human_size(after)}", outs, srcs)
 
     # generic

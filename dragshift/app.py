@@ -35,6 +35,7 @@ GLYPHS = {"Compress": "⇲", "Metadata": "ⓘ", "Redact": "▮", "Crop": "⌗", 
           "Mask": "◍", "Format": "{ }", "Minify": "–", "EOL LF": "↵", "EOL CRLF": "⏎",
           "Voice": "🎙", "Sample": "✂", "CleanTags": "🧹", "Mute": "🔇",
           "ZIP": "📦", "Hash": "#", "B64": "64", "QR": "▦", "SplitFile": "◫",
+          "Join": "⛓", "Subs": "💬", "Loud": "🔊", "Trim": "✂",
           "Contact": "⊞", "GIF": "🎞", "Playlist": "🎵", "Diff": "↔", "Portfolio": "📕"}
 
 HINTS = {
@@ -46,8 +47,9 @@ HINTS = {
     "Tidy": "Clean whitespace", "Sort": "Sort lines A→Z", "Mask": "Hide KEY= secrets",
     "Format": "Pretty-print JSON/XML", "Minify": "Shrink JSON/XML/CSS",
     "EOL LF": "Unix line endings", "EOL CRLF": "Windows line endings",
-    "Voice": "Tiny mono MP3", "Sample": "First 30s copy", "CleanTags": "Remove metadata",
-    "Mute": "Remove audio track",
+    "Voice": "Tiny mono MP3", "Sample": "First 30s MP3", "CleanTags": "Remove metadata",
+    "Mute": "Remove audio track", "Join": "Join same format", "Subs": "Extract subtitles",
+    "Loud": "Normalize loudness", "Trim": "Cut start→end",
     "ZIP": "Bundle into .zip", "Hash": "SHA-256 sidecar", "B64": "Base64 encode",
     "QR": "QR code PNG", "SplitFile": "Split 10 MB parts",
     "Contact": "Contact sheet", "GIF": "Animated GIF", "Playlist": ".m3u list",
@@ -64,8 +66,8 @@ FORMAT_HINTS = {"JPG": "Small, universal", "PNG": "Lossless · transparency", "W
 
 IMAGE_TOOLS = ["Compress", "Resize", "Crop", "Edit", "Annotate", "Redact", "Add BG", "Metadata"]
 PDF_TOOLS = ["Compress", "Split", "Rotate", "Protect", "Extract", "Metadata"]
-AUDIO_TOOLS = ["Voice", "Sample", "CleanTags"]
-VIDEO_TOOLS = ["Voice", "Sample", "CleanTags", "Mute"]
+AUDIO_TOOLS = ["Voice", "Sample", "CleanTags", "Loud", "Trim"]
+VIDEO_TOOLS = ["Voice", "Sample", "CleanTags", "Mute", "Subs", "Loud", "Trim"]
 
 
 def text_tools_for(path: str) -> list[str]:
@@ -198,6 +200,18 @@ class DragShiftApp(QObject):
         m.addAction(self.act_enabled)
         m.addAction("Open a file…", self.open_dialog)
         m.addSeparator()
+        try:
+            from . import history as _history
+            recent = _history.recent(8)
+            if recent:
+                rm = m.addMenu("Recent")
+                for ts, action, outs in recent:
+                    outs_list = [o for o in outs.split("\n") if o]
+                    label = f"{action} · {Path(outs_list[0]).name}" if outs_list else action
+                    rm.addAction(label[:60],
+                                 lambda o=outs_list: self._open_recent(o))
+        except Exception:
+            pass
         m.addAction("Settings…", self.open_settings)
         m.addAction("How to use", self.show_welcome)
         m.addAction("Tip the developer ♥", lambda: QDesktopServices.openUrl(QUrl(TIP_URL)))
@@ -318,6 +332,9 @@ class DragShiftApp(QObject):
             if cat in ("audio", "video"):
                 extras.append(Item("Playlist", GLYPHS["Playlist"], key="tool:Playlist",
                                    hint=HINTS["Playlist"]))
+                if len({Path(p).suffix.lower() for p in same}) == 1:
+                    extras.append(Item("Join", GLYPHS["Join"], key="tool:Join",
+                                       hint=HINTS["Join"]))
         if len(paths) > 1 or cat in ("sheet", "presentation", "ebook"):
             extras += [Item("ZIP", GLYPHS["ZIP"], key="tool:ZIP", hint=HINTS["ZIP"]),
                        Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=HINTS["Hash"])]
@@ -342,12 +359,30 @@ class DragShiftApp(QObject):
         except Exception:
             pass
         if cat is None or name in ("ZIP", "Hash", "B64", "Portfolio", "Diff", "Playlist",
-                                   "Contact", "GIF"):
+                                   "Contact", "GIF", "Join"):
             from . import filetools, multitools
             if name == "ZIP":
                 all_paths = paths  # bundle the mixed selection as dropped
-                self.submit("tool:ZIP", all_paths, lambda: [filetools.zip_files(all_paths)],
-                            "Zipping…")
+                pw = None
+                if len(all_paths) > 1:
+                    try:
+                        import pyminizip  # noqa: F401
+                        from PySide6.QtWidgets import QInputDialog
+                        text, ok = QInputDialog.getText(None, "ZIP bundle",
+                                                       "Password (empty = no password):",
+                                                       echo=QInputDialog.Password)
+                        if not ok:
+                            return
+                        pw = text or None
+                    except Exception:
+                        pw = None
+                if pw:
+                    self.submit("tool:ZIP", all_paths,
+                                lambda: [filetools.zip_files(all_paths, password=pw)],
+                                "Zipping…")
+                else:
+                    self.submit("tool:ZIP", all_paths, lambda: [filetools.zip_files(all_paths)],
+                                "Zipping…")
             elif name == "Hash":
                 self.submit("tool:Hash", paths, lambda: [filetools.sha256_file(p) for p in paths],
                             "Hashing…")
@@ -418,7 +453,7 @@ class DragShiftApp(QObject):
                 return
         if cat in ("audio", "video"):
             from . import mediatools
-            if name in ("Voice", "Sample", "CleanTags", "Mute"):
+            if name in ("Voice", "Sample", "CleanTags", "Mute", "Subs", "Loud", "Trim", "Join"):
                 if name == "Voice":
                     self.submit("tool:Voice", paths,
                                 lambda: [mediatools.audio_voice(p) for p in paths], "Compressing voice…")
@@ -431,6 +466,29 @@ class DragShiftApp(QObject):
                 elif name == "Mute":
                     self.submit("tool:Mute", paths,
                                 lambda: [mediatools.video_mute(p) for p in paths], "Muting…")
+                elif name == "Subs":
+                    self.submit("tool:Subs", paths,
+                                lambda: [mediatools.extract_subs(p) for p in paths], "Extracting subs…")
+                elif name == "Loud":
+                    self.submit("tool:Loud", paths,
+                                lambda: [mediatools.loudnorm(p) for p in paths], "Normalizing…")
+                elif name == "Trim":
+                    try:
+                        from PySide6.QtWidgets import QInputDialog
+                        text, ok = QInputDialog.getText(None, "Trim media",
+                                                       "Start-End seconds (e.g. 5-20):")
+                        if not ok or "-" not in text:
+                            return
+                        a, b = text.split("-", 1)
+                        s, e = float(a.strip()), float(b.strip())
+                    except Exception:
+                        self.toasts.error("Trim", "Use format start-end, e.g. 5-20.")
+                        return
+                    self.submit("tool:Trim", paths,
+                                lambda: [mediatools.trim_media(p, s, e) for p in paths], "Trimming…")
+                elif name == "Join":
+                    self.submit("tool:Join", paths, lambda: [mediatools.concat_same(paths)],
+                                "Joining…")
                 return
         if cat == "sheet" and name in ("ZIP", "Hash"):
             from . import filetools
@@ -466,14 +524,31 @@ class DragShiftApp(QObject):
             w.show()
 
     def submit(self, action: str, srcs: list, fn, working: str = "Working…", extra: str = ""):
-        """Run in the background. A spinner card appears only if it takes > 150 ms."""
-        state = {"card": None, "finished": False}
+        """Run in the background. A spinner card appears only if it takes > 150 ms,
+        with an elapsed-seconds ticker for long jobs (ffmpeg etc)."""
+        state = {"card": None, "finished": False, "t0": None, "ticker": None}
         names = Path(srcs[0]).name if len(srcs) == 1 else f"{len(srcs)} files"
 
         def show_spinner():
             if not state["finished"]:
+                import time as _t
                 state["card"] = self.toasts.new()
                 state["card"].working(working, names)
+                state["t0"] = _t.monotonic()
+                tick = QTimer(state["card"])
+                tick.setInterval(1000)
+                def _tick():
+                    if state["finished"] or state["card"] is None:
+                        tick.stop()
+                        return
+                    try:
+                        state["card"].progress(int(_t.monotonic() - state["t0"]))
+                    except Exception:
+                        pass
+                tick.timeout.connect(_tick)
+                tick.start()
+                state["ticker"] = tick
+                state["card"]._ticker = tick
 
         QTimer.singleShot(150, show_spinner)
         job = Job(action, srcs, fn, extra)
@@ -481,6 +556,11 @@ class DragShiftApp(QObject):
         def done(r):
             release(job)
             state["finished"] = True
+            try:
+                from . import history
+                history.log(action, [str(s) for s in srcs], [str(o) for o in r.outs])
+            except Exception:
+                pass
             card = state["card"] or self.toasts.new()
             card.done(r)
 
@@ -519,6 +599,15 @@ class DragShiftApp(QObject):
         w = SettingsWindow(self.settings)
         w.changed.connect(self._settings_changed)
         self.open_window(w)
+
+    def _open_recent(self, outs: list[str]):
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        for o in outs:
+            if os.path.exists(o):
+                QDesktopServices.openUrl(QUrl.fromLocalFile(o))
+                return
+        self.toasts.error("Recent", "That file was moved or deleted.")
 
     def _settings_changed(self):
         self.watcher.set_key(self.settings.get("trigger"))
@@ -617,6 +706,40 @@ def main(argv: list[str] | None = None) -> int:
 
     if "--selftest" in argv:
         return selftest()
+    # headless scripting: DragShift.exe *.png --convert-to JPG [--out-dir DIR] [--tool tool:Hash]
+    if "--no-ui" in argv or "--convert-to" in argv or "--tool" in argv:
+        try:
+            out_dir = None
+            if "--out-dir" in argv:
+                out_dir = argv[argv.index("--out-dir") + 1]
+                from .util import CONFIG
+                CONFIG["output"] = "next"
+            conv = argv[argv.index("--convert-to") + 1].upper() if "--convert-to" in argv else None
+            tool = argv[argv.index("--tool") + 1] if "--tool" in argv else None
+            files = [os.path.abspath(a) for a in argv[1:]
+                     if not a.startswith("-") and a not in (out_dir,) and os.path.exists(a)]
+            if out_dir:
+                os.environ["DRAGSHIFT_OUT"] = out_dir
+            from .util import category as _cat
+            if conv:
+                for f in files:
+                    c = _cat(f)
+                    if c is None:
+                        print(f"SKIP {f}: unsupported"); continue
+                    outs = convert.convert(f, c, conv)
+                    print(f"OK {f} -> {', '.join(str(o) for o in outs)}")
+                return 0
+            if tool:
+                _, _, tname = tool.partition(":")
+                from . import filetools
+                outs = {"ZIP": lambda: filetools.zip_files(files),
+                        "Hash": lambda: [filetools.sha256_file(p) for p in files]}.get(tname, lambda: (_ for _ in ()).throw(
+                    ValueError(f"Unknown tool {tool}")))()
+                print(f"OK -> {', '.join(str(o) for o in outs)}")
+                return 0
+        except Exception as e:
+            print(f"ERROR: {e}")
+            return 2
     files = [os.path.abspath(a) for a in argv[1:] if not a.startswith("-") and os.path.exists(a)]
     # already running? hand over and exit (instant: no second UI start-up)
     if send_to_running({"files": files} if files else {"show": "--quiet" not in argv}):

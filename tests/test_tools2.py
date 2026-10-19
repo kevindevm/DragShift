@@ -79,3 +79,17 @@ def test_multi_and_sibling(tmp_path):
     arch = tmp_path / "a.tar.gz"
     arch.write_bytes(b"x")
     assert sibling(arch, "Out").name == "a Out.tar.gz"
+
+
+def test_history_and_trim_validation(tmp_path):
+    from dragshift import history, mediatools
+    from dragshift.util import UserError
+    f = tmp_path / "h.txt"
+    f.write_text("x")
+    history.log("convert:TXT", [str(f)], [str(f)])
+    assert history.recent(5)
+    import pytest as _pt
+    with _pt.raises(UserError):
+        mediatools.trim_media(f, 20, 5)
+    with _pt.raises(UserError):
+        mediatools.concat_same([str(f)])

@@ -17,9 +17,20 @@ from .util import UserError, output_dir, sibling, unique_path
 PART_SIZE = 10_000_000
 
 
-def zip_files(srcs: list[str | Path]) -> Path:
+def zip_files(srcs: list[str | Path], password: str | None = None) -> Path:
     if not srcs:
         raise UserError("Nothing to compress.")
+    if password:
+        try:
+            import pyminizip
+        except Exception:
+            raise UserError("Password ZIP needs pyminizip (pip install pyminizip).")
+        first = Path(srcs[0])
+        out = unique_path(output_dir(first) / f"{first.stem} bundle.zip")
+        pyminizip.compress_multiple([str(Path(s)) if Path(s).is_file() else str(Path(s)) for s in srcs
+                                     if Path(s).is_file()],
+                                    [], str(out), password, 5)
+        return out
     first = Path(srcs[0])
     out = unique_path(output_dir(first) / f"{first.stem} bundle.zip")
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:

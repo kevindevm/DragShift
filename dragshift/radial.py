@@ -135,6 +135,14 @@ class RadialMenu(QWidget):
     # ------------------------------------------------------------ show / hide
     def popup(self, pos: QPoint | None = None, paths: list[str] | None = None):
         pos = pos or QCursor.pos()
+        # accessibility: hub delay + text scale from settings
+        try:
+            from .util import CONFIG
+            self.hub_timer.setInterval(int(CONFIG.get("hub_ms", 420)))
+            self.font_scale = float(CONFIG.get("font_scale", 100)) / 100.0
+            self.high_contrast = bool(CONFIG.get("high_contrast", False))
+        except Exception:
+            pass
         tl = pos - QPoint(SIZE // 2, SIZE // 2)
         scr = QGuiApplication.screenAt(pos) or QGuiApplication.primaryScreen()
         g = scr.geometry()
@@ -416,6 +424,8 @@ class RadialMenu(QWidget):
 
     # ------------------------------------------------------------ painting
     def _text_colors(self) -> tuple[QColor, QColor, QColor]:
+        if getattr(self, "high_contrast", False):
+            return QColor(255, 255, 255), QColor(255, 255, 255), QColor(0, 0, 0)
         if self.is_light:
             return QColor(28, 20, 44), QColor(28, 20, 44, 170), QColor(255, 255, 255, 120)
         return QColor(255, 255, 255), QColor(255, 255, 255, 190), QColor(0, 0, 0, 110)
@@ -522,12 +532,13 @@ class RadialMenu(QWidget):
             else:
                 sub = ring_name.upper()
         f = QFont("Segoe UI Variable Display", 1)
-        f.setPixelSize(14)
+        fs = getattr(self, "font_scale", 1.0)
+        f.setPixelSize(int(14 * fs))
         f.setBold(True)
         p.setFont(f)
         rect_top = QRectF(c.x() - R_HUB + 4, c.y() - 21, 2 * R_HUB - 8, 20)
         self._text(p, rect_top, top, fg, shadow_col)
-        f.setPixelSize(10)
+        f.setPixelSize(int(10 * fs))
         f.setBold(False)
         p.setFont(f)
         self._text(p, QRectF(c.x() - R_HUB + 6, c.y() + 2, 2 * R_HUB - 12, 28), sub, fg_dim, None,
@@ -551,18 +562,19 @@ class RadialMenu(QWidget):
         p.setOpacity(p.opacity() * (0.25 + 0.75 * self._swap))
         col = QColor(255, 255, 255) if h > 0.5 else fg   # hovered petal is warm-lit: white text
         f = QFont("Segoe UI Variable Display", 1)
+        fs = getattr(self, "font_scale", 1.0)
         if it.glyph:
-            f.setPixelSize(int(18 + 3 * h))
+            f.setPixelSize(int((18 + 3 * h) * fs))
             p.setFont(f)
             self._text(p, QRectF(pt.x() - 30, pt.y() - 24, 60, 24), it.glyph, col, shadow_col,
                        Qt.AlignHCenter | Qt.AlignBottom)
-            f.setPixelSize(10)
+            f.setPixelSize(int(10 * fs))
             f.setBold(True)
             f.setLetterSpacing(QFont.AbsoluteSpacing, 0.7)
             p.setFont(f)
             self._text(p, QRectF(pt.x() - 42, pt.y() + 1, 84, 16), it.label.upper(), col, shadow_col)
         else:
-            f.setPixelSize(int(14 + 2 * h))
+            f.setPixelSize(int((14 + 2 * h) * fs))
             f.setBold(True)
             f.setLetterSpacing(QFont.AbsoluteSpacing, 0.9)
             p.setFont(f)

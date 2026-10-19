@@ -98,11 +98,22 @@ class ToastCard(QWidget):
     # ------------------------------------------------------------ state
     def working(self, title: str, detail: str = ""):
         self.state, self.title, self.detail = "working", title, detail
+        self._base_detail = detail
         self.spinner.start()
         self.update()
 
+    def progress(self, elapsed: int):
+        if self.state == "working":
+            self.detail = f"{self._base_detail} · {elapsed}s" if getattr(self, "_base_detail", "") else f"{elapsed}s"
+            self.update()
+
     def done(self, r: Result):
         self.spinner.stop()
+        if hasattr(self, "_ticker") and self._ticker is not None:
+            try:
+                self._ticker.stop()
+            except Exception:
+                pass
         self.state, self.result = "done", r
         self.title, self.detail, self.good = r.title, r.detail, r.good
         self.thumb = None
@@ -110,7 +121,11 @@ class ToastCard(QWidget):
             pm = QPixmap(str(r.thumb))
             if not pm.isNull():
                 self.thumb = pm.scaled(64, 64, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-        self.life.start(6500)
+        try:
+            from .util import CONFIG
+            self.life.start(int(CONFIG.get("toast_ms", 6500)))
+        except Exception:
+            self.life.start(6500)
         self.update()
 
     def error(self, title: str, detail: str):
