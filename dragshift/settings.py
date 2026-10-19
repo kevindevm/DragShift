@@ -484,9 +484,20 @@ class EnginesWindow(GlassWindow):
         self._lo_worker = _Worker()
         self._lo_worker.moveToThread(self._lo_thread)
         self._lo_thread.started.connect(self._lo_worker.run)
-        self._lo_worker.prog.connect(lambda p: btn.setText(f"{_trb('Descargando…')} {p}%"))
+        self._lo_worker.prog.connect(self._on_lo_progress)
+        self._lo_btn = btn
         self._lo_worker.done.connect(lambda e: self._lo_done(btn, e))
         self._lo_thread.start()
+
+    def _on_lo_progress(self, p: int):
+        from .i18n import tr as _t
+        btn = getattr(self, "_lo_btn", None)
+        if btn is None:
+            return
+        if p > 100:
+            btn.setText(_t("Instalando… (varios minutos)"))
+        else:
+            btn.setText("%s %d%%" % (_t("Descargando…"), p))
 
     def _lo_done(self, btn, err):
         try:

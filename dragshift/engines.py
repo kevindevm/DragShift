@@ -215,24 +215,61 @@ def libreoffice_install(progress=None) -> Path:
     dest = engines_root() / "libreoffice"
     tmp = Path(tempfile.mkdtemp()) / f"libreoffice-{ver}.msi"
 
+    def _log(msg: str):
+        try:
+            with open(dest / "install-error.log", "a", encoding="utf-8") as f:
+                import datetime as _dt
+                f.write(f"{_dt.datetime.now():%Y-%m-%d %H:%M:%S} {msg}\n")
+        except Exception:
+            pass
+
     def _hook(block, size, total):
         if progress and total > 0:
             try:
                 progress(min(99, int(block * size * 100 / total)))
             except Exception:
                 pass
-
     try:
         urllib.request.urlretrieve(url, tmp, reporthook=_hook)
     except Exception as e:
+        _log(f"download failed: {e}")
         raise UserError(f"Couldn't download LibreOffice {ver}: {e}")
+    try:
+        size = tmp.stat().st_size
+    except OSError:
+        size = 0
+    if size < 100_000_000:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        _log(f"download incomplete: {size} bytes")
+        raise UserError(f"LibreOffice download incomplete ({size // 1_000_000} MB). Check connection and retry.")
     target = dest / ver.replace(".", "_")
     target.mkdir(parents=True, exist_ok=True)
+    # msiexec /a refuses dirty targets: start clean
+    for child in list(target.iterdir()):
+        try:
+            import shutil as _sh
+            if child.is_dir() and not child.is_symlink():
+                _sh.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink()
+        except OSError:
+            pass
+    if progress:
+        try:
+            progress(101)  # switch UI to the "installing" label
+        except Exception:
+            pass
     log_path = dest / "install.log"
     try:
-        r = subprocess.run(["msiexec", "/a", f'"{tmp}"', f'TARGETDIR="{target}"', "/qn", "/L*v", f'"{log_path}"'],
+        # list form already quotes paths with spaces: no literal quotes here
+        r = subprocess.run(["msiexec", "/a", str(tmp), f"TARGETDIR={target}", "/qn",
+                            "/L*v", str(log_path)],
                            capture_output=True, timeout=1800)
     except Exception as e:
+        _log(f"msiexec launch failed: {e}")
         raise UserError(f"msiexec failed: {e}")
     finally:
         try:
@@ -240,9 +277,12 @@ def libreoffice_install(progress=None) -> Path:
         except OSError:
             pass
     if r.returncode != 0:
+        err = (r.stderr or b"").decode("utf-8", "replace")[-500:] or (r.stdout or b"").decode("utf-8", "replace")[-500:]
+        _log(f"msiexec code {r.returncode}: {err}")
         raise UserError(f"LibreOffice install failed (msiexec code {r.returncode}). See engines/install.log.")
     so = _soffice()
     if not so:
+        _log("soffice.exe not found after install")
         raise UserError("Installed, but soffice.exe not found. Report this as a bug.")
     return so
 

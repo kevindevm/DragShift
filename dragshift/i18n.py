@@ -439,6 +439,8 @@ ES = {
     "Descargando…": "Descargando…",
     "Descargando… (~176 MB)": "Descargando… (~176 MB)",
     "Descargando MSI…": "Descargando MSI…",
+    "Instalando… (varios minutos)": "Instalando… (varios minutos)",
+    "Automatic install is Windows-only. Install LibreOffice with your package manager, then use Ya lo tengo…": "Instalación automática solo en Windows. Instala LibreOffice con tu gestor de paquetes y usa Ya lo tengo…",
     "Modelo IA": "Modelo IA",
     "LibreOffice": "LibreOffice",
     "Carpeta de LibreOffice (program)": "Carpeta de LibreOffice (program)",
