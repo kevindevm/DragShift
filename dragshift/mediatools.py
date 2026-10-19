@@ -19,9 +19,15 @@ def _ffmpeg() -> str:
     import sys
     try:
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-            bundled = os.path.join(sys._MEIPASS, "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
-            if os.path.exists(bundled):
-                return bundled
+            base = Path(sys._MEIPASS)
+            direct = base / ("ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+            if direct.exists():
+                return str(direct)
+            # imageio-ffmpeg ships versioned names (ffmpeg-win-x86_64-v7.1.exe)
+            hits = sorted(base.rglob("ffmpeg*.exe" if sys.platform == "win32" else "ffmpeg*"))
+            hits = [h for h in hits if h.is_file()]
+            if hits:
+                return str(hits[0])
         from imageio_ffmpeg import get_ffmpeg_exe
         return get_ffmpeg_exe()
     except Exception as e:
