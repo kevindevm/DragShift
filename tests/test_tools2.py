@@ -226,7 +226,7 @@ def test_v5_conversions(tmp_path):
     assert presets_for("pdf") == []
     from dragshift import bgremove
     state, msg = bgremove.ai_status()
-    assert state in ("ready", "no-model", "no-onnx", "frozen-no-onnx") and msg
+    assert state in ("ready", "no-model", "no-onnx") and msg
 
 
 def test_ring_order_stable_for_e2e(tmp_path):

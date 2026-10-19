@@ -701,15 +701,9 @@ class DragShiftApp(QObject):
                 from .util import CONFIG
                 mode = str(CONFIG.get("bg_mode", "solid"))
                 if mode == "ai":
-                    state, msg = bgremove.ai_status()
+                    state, _msg = bgremove.ai_status()
                     if state != "ready":
-                        if state == "no-model":
-                            self.toasts.info("AI background",
-                                             "Downloading model (~176 MB, once)… watch the timer.")
-                        else:
-                            self.toasts.error("AI background", msg)
-                            if state != "no-model":
-                                return
+                        self.toasts.info("AI background", "Downloading engine (~260 MB, once)… watch the timer.")
                     self.submit("tool:Remove BG", paths,
                                 lambda: [bgremove.remove_ai_background(p) for p in paths],
                                 "AI cutout…")

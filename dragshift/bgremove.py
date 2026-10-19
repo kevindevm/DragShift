@@ -1,10 +1,10 @@
 """Background removal: solid-color (always works) + AI u2net (opt-in download).
 
 AI path downloads NOTHING at install time. On first AI use it fetches:
+  - onnxruntime wheel (~90 MB) from PyPI (SHA-256 verified) into engines/
   - u2net.onnx (~176 MB) from the rembg release, once, into the models dir
-  - onnxruntime: reused if importable; in dev (non-frozen) auto `pip install onnxruntime`,
-    in the frozen portable exe the user is told how to enable it.
-Toggle lives in Settings ("Background removal": Off=skip, Solid, AI).
+Toggle lives in Settings ("Background removal"). Works in dev, portable and
+installed builds alike.
 """
 from __future__ import annotations
 
@@ -56,37 +56,34 @@ def rembg_available() -> bool:
 
 
 def ai_status() -> tuple[str, str]:
-    """(state, human message). States: ready / no-model / no-onnx / frozen-no-onnx."""
+    """(state, human message). States: ready / no-model / no-onnx."""
     has_model = ai_model_present()
     has_onnx = onnx_available()
     if has_model and has_onnx:
         return "ready", "AI ready (model downloaded)"
     if not has_onnx:
-        if getattr(sys, "frozen", False):
-            return ("frozen-no-onnx",
-                    "Not available in portable .exe (can't install onnxruntime inside it). "
-                    "Use the Python version or Solid background.")
-        return ("no-onnx",
-                "Needs onnxruntime (auto-installs on first AI use) + model download (~176 MB, once)")
+        return "no-onnx", "Downloads onnxruntime (~90 MB) + model (~176 MB), once"
     return "no-model", "Model not downloaded yet (downloads ~176 MB on first AI use)"
 
 
 def ensure_onnxruntime() -> None:
-    """Make onnxruntime importable. Dev: pip-install to user site. Frozen: explain."""
+    """Make onnxruntime importable anywhere (dev, portable, installed).
+
+    Order: already importable → engines/ copy → download the official PyPI
+    wheel into engines/ (verified by SHA-256 from PyPI metadata). No pip,
+    no admin, works frozen.
+    """
     if onnx_available():
         return
-    if getattr(sys, "frozen", False):
-        raise UserError(
-            "AI background needs onnxruntime, which can't be pip-installed into the portable .exe. "
-            "Use the Python version (pip install onnxruntime) or Solid background instead.")
-    import subprocess
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "onnxruntime"],
-                       check=True, capture_output=True)
-    except Exception as e:
-        raise UserError(f"Couldn't install onnxruntime: {e}")
+    from . import engines as _eng
+    vendor = _eng.engines_root() / "onnxruntime"
+    if _eng.wheel_importable("onnxruntime", vendor):
+        return
+    _eng.download_wheel("onnxruntime", vendor)
+    if not _eng.wheel_importable("onnxruntime", vendor):
+        raise UserError("onnxruntime downloaded but still not importable. Restart the app.")
     if not onnx_available():
-        raise UserError("onnxruntime installed but still not importable. Restart the app.")
+        raise UserError("onnxruntime downloaded but still not importable. Restart the app.")
 
 
 def ensure_model(progress=None) -> Path:

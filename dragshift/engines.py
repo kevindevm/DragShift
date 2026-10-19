@@ -150,3 +150,90 @@ def libreoffice_pdf(src: str | Path, out_dir: str | Path | None = None) -> Path:
         out = sibling(src, ext=".pdf")
         out.write_bytes(pdfs[0].read_bytes())
         return out
+
+
+# ---------------------------------------------------------------- vendored wheels
+def _plat_tags() -> list[str]:
+    if sys.platform == "win32":
+        return ["win_amd64", "win32"]
+    if sys.platform == "darwin":
+        import platform as _p
+        arm = _p.machine().lower().startswith("arm")
+        return (["macosx_11_0_arm64", "macosx_12_0_arm64", "macosx_10_9_x86_64"]
+                if arm else ["macosx_10_9_x86_64", "macosx_11_0_arm64"])
+    return ["manylinux_2_27_x86_64", "manylinux_2_17_x86_64", "manylinux2014_x86_64"]
+
+
+def wheel_importable(name: str, vendor: Path) -> bool:
+    """Add a vendored wheel dir to the path (native DLLs included) and try import."""
+    if vendor.exists():
+        s = str(vendor)
+        if s not in sys.path:
+            sys.path.insert(0, s)
+        if sys.platform == "win32":
+            for d in (vendor,):
+                try:
+                    os.add_dll_directory(str(d))
+                except Exception:
+                    pass
+        # frozen exe: its own dir already has the CRT; also expose it
+        if getattr(sys, "frozen", False):
+            try:
+                os.add_dll_directory(sys._MEIPASS)
+            except Exception:
+                pass
+    try:
+        __import__(name)
+        return True
+    except Exception:
+        return False
+
+
+def download_wheel(name: str, vendor: Path, version: str | None = None,
+                   progress=None) -> Path:
+    """Download+verify+extract a PyPI wheel into vendor/. Raises UserError."""
+    from .util import UserError
+    import hashlib
+    import json as _json
+    import urllib.request
+    import zipfile
+
+    def _get(url: str) -> bytes:
+        req = urllib.request.Request(url, headers={"User-Agent": "DragShift"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read()
+
+    py = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    meta_url = (f"https://pypi.org/pypi/{name}/{version}/json" if version
+                else f"https://pypi.org/pypi/{name}/json")
+    try:
+        meta = _json.loads(_get(meta_url).decode("utf-8"))
+    except Exception as e:
+        raise UserError(f"Couldn't reach PyPI for {name}: {e}")
+    cands = []
+    for u in meta.get("urls", []):
+        fn = u.get("filename", "")
+        if not fn.endswith(".whl"):
+            continue
+        low = fn.lower()
+        py_ok = (py in low) or ("py3" in low and "cp" not in low) or ("py2.py3" in low)
+        plat_ok = any(t in low for t in _plat_tags())
+        if py_ok and plat_ok:
+            cands.append(u)
+    if not cands:
+        raise UserError(f"No {name} wheel for this Python/platform. Use the Python version instead.")
+    # prefer exact cp match, then smallest file
+    cands.sort(key=lambda u: (f"-{py}-" not in u["filename"], u.get("size", 0)))
+    pick = cands[0]
+    data = _get(pick["url"])
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != pick.get("sha256", digest):
+        raise UserError(f"{name} download failed checksum.")
+    vendor.mkdir(parents=True, exist_ok=True)
+    try:
+        import io as _io
+        with zipfile.ZipFile(_io.BytesIO(data)) as z:
+            z.extractall(vendor)
+    except Exception as e:
+        raise UserError(f"Couldn't unpack {name}: {e}")
+    return vendor

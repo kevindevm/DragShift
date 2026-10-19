@@ -200,26 +200,12 @@ class SettingsWindow(GlassWindow):
         grid.addWidget(QLabel("Background removal"), r, 0)
         try:
             from . import bgremove as _bg
-            from .util import is_portable as _port
             _st, _msg = _bg.ai_status()
-            if _st == "ready":
-                _ai_label = "AI u2net (ready ✓)"
-            elif _port() and not _bg.onnx_available():
-                _ai_label = "AI u2net (not in portable — use Python ver.)"
-            else:
-                _ai_label = "AI u2net (downloads ~176 MB once)"
+            _ai_label = "AI u2net (ready ✓)" if _st == "ready" else "AI u2net (auto-downloads once)"
         except Exception:
-            _ai_label = "AI u2net (downloads ~176 MB once)"
+            _ai_label = "AI u2net (auto-downloads once)"
         self.bgm = combo([("solid", "Solid (instant)"), ("ai", _ai_label)],
                          self.s.get("bg_mode"))
-        try:
-            from .util import is_portable as _port2
-            from . import bgremove as _bg2
-            if _port2() and not _bg2.onnx_available() and self.s.get("bg_mode") == "ai":
-                self.s.set("bg_mode", "solid")
-                self.bgm.setCurrentIndex(0)
-        except Exception:
-            pass
         self.bgm.currentIndexChanged.connect(lambda _: self._save("bg_mode", self.bgm.currentData()))
         grid.addWidget(self.bgm, r, 1)
         r += 1
