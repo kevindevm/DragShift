@@ -402,24 +402,12 @@ class DragShiftApp(QObject):
             extras.append(Item("Outline", "🗂", key="tool:Outline", hint="Extract outline"))
         if extras:
             rings["Bundle"] = extras
-        try:
-            mru = self.settings.get("mru") or {}
-            for ring in rings.values():
-                ring.sort(key=lambda it: -int(mru.get(it.label, 0)))
-        except Exception:
-            pass
         return rings
 
     # ------------------------------------------------------------ actions
     def run_item(self, item: Item, paths: list[str]):
         cat = category(paths[0]) if paths else None
         kind, name = item.key.split(":", 1)
-        try:  # most-recently-used ordering for next popup
-            mru = self.settings.get("mru") or {}
-            mru[name] = int(mru.get(name, 0)) + 1
-            self.settings.set("mru", mru)
-        except Exception:
-            pass
         if kind == "preset":
             p = PRESETS.get(name, {})
             if cat not in p.get("cats", ()):

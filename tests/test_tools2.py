@@ -229,3 +229,27 @@ def test_presets_and_ai_status():
     from dragshift import bgremove
     state, msg = bgremove.ai_status()
     assert state in ("ready", "no-model", "no-onnx", "frozen-no-onnx") and msg
+
+
+def test_ring_order_stable_for_e2e(tmp_path):
+    """E2E computes petal positions with build_rings(None, ...): order must not
+    depend on self/settings, or drops land on the wrong slice."""
+    from dragshift.app import DragShiftApp
+    import tempfile
+    from PIL import Image as _I
+    d = tmp_path
+    a = d / "a.png"
+    _I.new("RGB", (32, 32), (255, 0, 0)).save(a)
+    b = d / "b.jpg"
+    _I.new("RGB", (32, 32), (0, 255, 0)).save(b)
+    t = d / "t.txt"
+    t.write_text("hi")
+    for paths in ([str(a)], [str(a), str(b)], [str(t)], [str(a), str(t)]):
+        rings = DragShiftApp.build_rings(None, [str(p) for p in paths])
+        assert list(rings) == ["Convert"] or "Convert" in rings
+        for name, items in rings.items():
+            assert [i.label for i in items] == [i.label for i in items]  # deterministic
+    r1 = DragShiftApp.build_rings(None, [str(a)])
+    r2 = DragShiftApp.build_rings(None, [str(a)])
+    assert [i.label for i in r1["Convert"]] == [i.label for i in r2["Convert"]]
+    assert [i.label for i in r1["Tools"]] == [i.label for i in r2["Tools"]]

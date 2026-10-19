@@ -29,7 +29,6 @@ DEFAULTS = {
     "high_contrast": False,
     "font_scale": 100,
     "bg_mode": "solid",
-    "mru": {},
     "trigger": "shift",
     "welcomed": False,
 }
