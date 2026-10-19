@@ -18,6 +18,7 @@ from PySide6.QtGui import (QColor, QCursor, QDesktopServices, QFont, QFontMetric
 from PySide6.QtWidgets import QWidget
 
 from . import glass
+from .util import ui_family
 from .report import Result
 
 W, H = 380, 104
@@ -85,6 +86,7 @@ class ToastCard(QWidget):
         self.spin = 0.0
         self.hover_btn = -1
         self.buttons: list[tuple[str, QRectF]] = []
+        self.on_click = None  # optional callback when the card body is clicked
         self._fade = 0.0
         from .liquid import GlassStyle
         self.liquid = glass.LiquidBacking(self, 20, GlassStyle(blur=8, strength=12, bezel=16))
@@ -205,6 +207,12 @@ class ToastCard(QWidget):
             if r.contains(e.position()):
                 self._act(name)
                 return
+        if callable(getattr(self, "on_click", None)):
+            try:
+                self.on_click()
+            except Exception:
+                pass
+            return
         if self.state == "done" and self.result and self.result.outs:
             reveal(self.result.outs[0])
             self.dismiss()
@@ -268,7 +276,7 @@ class ToastCard(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(QColor(255, 255, 255, 34))
             p.drawEllipse(lead.center(), 22, 22)
-            f = QFont("Segoe UI", 1)
+            f = QFont(ui_family(False))
             f.setPixelSize(22)
             f.setBold(True)
             p.setFont(f)
@@ -277,7 +285,7 @@ class ToastCard(QWidget):
             x = 82
 
         tw = W - x - 34
-        f = QFont("Segoe UI Variable Display", 1)
+        f = QFont(ui_family(True))
         f.setPixelSize(15)
         f.setBold(True)
         p.setFont(f)
@@ -288,7 +296,7 @@ class ToastCard(QWidget):
         # highlighted figure chip (e.g. "75% smaller")
         if self.good:
             gx = x + fm.horizontalAdvance(title) + 8
-            f2 = QFont("Segoe UI", 1)
+            f2 = QFont(ui_family(False))
             f2.setPixelSize(11)
             f2.setBold(True)
             fm2 = QFontMetrics(f2)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".tif", ".tiff",
@@ -95,6 +96,24 @@ def category(path: str | Path) -> str | None:
     return None
 
 
+def resolve_shortcuts(paths: list[str]) -> list[str]:
+    """Windows .lnk shortcuts (desktop icons) stand for the file they point to."""
+    if os.name != "nt" or not any(str(p).lower().endswith(".lnk") for p in paths):
+        return list(paths)
+    out = []
+    for p in paths:
+        if str(p).lower().endswith(".lnk"):
+            try:
+                import win32com.client  # type: ignore
+                target = win32com.client.Dispatch("WScript.Shell").CreateShortcut(str(p)).TargetPath
+                if target and os.path.isfile(target):
+                    p = target
+            except Exception:
+                pass
+        out.append(p)
+    return out
+
+
 def unique_path(path: str | Path) -> Path:
     """Return `path`, or `name (1).ext`, `name (2).ext`... if it already exists."""
     p = Path(path)
@@ -110,6 +129,11 @@ def unique_path(path: str | Path) -> Path:
 
 class UserError(Exception):
     """An error with a message that's fine to show the user as-is."""
+
+
+def is_portable() -> bool:
+    """Frozen exe (portable or Inno install): can't pip-install AI deps at runtime."""
+    return getattr(sys, "frozen", False)
 
 
 # Runtime options (filled from Settings at start-up; plain values so worker threads can read them)
@@ -174,3 +198,32 @@ def keep(job):
 
 def release(job):
     ALIVE.discard(job)
+
+
+# ---------------------------------------------------------------- fonts
+_FONT_FAMILY: dict[bool, str] = {}
+_DISPLAY = ["Segoe UI Variable Display", "Segoe UI", "SF Pro Display", "SF Pro", "Helvetica Neue",
+            "Inter", "Cantarell", "Noto Sans", "Ubuntu", "DejaVu Sans"]
+_TEXT = ["Segoe UI Variable Text", "Segoe UI", "SF Pro Text", "SF Pro", "Helvetica Neue",
+         "Inter", "Cantarell", "Noto Sans", "Ubuntu", "DejaVu Sans"]
+
+
+def ui_family(display: bool = True) -> str:
+    """First UI font that is really installed. Never ask Qt for a missing family: on macOS 26
+    an unknown family can resolve to a font that draws nothing (labels vanish)."""
+    if display not in _FONT_FAMILY:
+        from PySide6.QtGui import QFontDatabase
+        have = set(QFontDatabase.families())
+        pick = next((f for f in (_DISPLAY if display else _TEXT) if f in have), None)
+        if pick is None:
+            pick = QFontDatabase.systemFont(QFontDatabase.GeneralFont).family()
+        _FONT_FAMILY[display] = pick
+    return _FONT_FAMILY[display]
+
+
+def ui_font(px: int = 13, bold: bool = False, display: bool = True):
+    from PySide6.QtGui import QFont
+    f = QFont(ui_family(display))
+    f.setPixelSize(int(px))
+    f.setBold(bold)
+    return f

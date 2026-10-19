@@ -196,12 +196,26 @@ class SettingsWindow(GlassWindow):
         grid.addWidget(QLabel("Background removal"), r, 0)
         try:
             from . import bgremove as _bg
+            from .util import is_portable as _port
             _st, _msg = _bg.ai_status()
-            _ai_label = f"AI u2net ({'ready ✓' if _st == 'ready' else 'needs download'})"
+            if _st == "ready":
+                _ai_label = "AI u2net (ready ✓)"
+            elif _port() and not _bg.onnx_available():
+                _ai_label = "AI u2net (not in portable — use Python ver.)"
+            else:
+                _ai_label = "AI u2net (downloads ~176 MB once)"
         except Exception:
             _ai_label = "AI u2net (downloads ~176 MB once)"
         self.bgm = combo([("solid", "Solid (instant)"), ("ai", _ai_label)],
                          self.s.get("bg_mode"))
+        try:
+            from .util import is_portable as _port2
+            from . import bgremove as _bg2
+            if _port2() and not _bg2.onnx_available() and self.s.get("bg_mode") == "ai":
+                self.s.set("bg_mode", "solid")
+                self.bgm.setCurrentIndex(0)
+        except Exception:
+            pass
         self.bgm.currentIndexChanged.connect(lambda _: self._save("bg_mode", self.bgm.currentData()))
         grid.addWidget(self.bgm, r, 1)
         r += 1
@@ -268,7 +282,7 @@ class WelcomeWindow(GlassWindow):
             badge = QLabel(n)
             badge.setAlignment(Qt.AlignCenter)
             badge.setFixedSize(34, 34)
-            badge.setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #ff8a5c, stop:1 #ff4f8b);"
+            badge.setStyleSheet("background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #5ac8ff, stop:1 #2f7bff);"
                                 "border-radius: 17px; font-weight: 700; font-size: 12pt;")
             row.addWidget(badge)
             col = QVBoxLayout()

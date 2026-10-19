@@ -8,6 +8,7 @@ from __future__ import annotations
 import math
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import (QEasingCurve, QObject, QPoint, QPointF, QRectF, QRunnable, Qt,
@@ -17,6 +18,7 @@ from PySide6.QtGui import (QColor, QCursor, QFont, QGuiApplication, QImage, QPai
 from PySide6.QtWidgets import QWidget
 
 from . import glass
+from .util import resolve_shortcuts, ui_family
 
 
 @dataclass
@@ -195,8 +197,16 @@ class RadialMenu(QWidget):
         self.got_drag = False
         self.hub_armed = False  # drags start on the hub; don't flip until they leave it
         self.click_mode = paths is not None
+        early = []
+        if paths is None and sys.platform == "darwin":
+            from . import platform_mac
+            early = platform_mac.drag_files()
+            if early:
+                print(f"menu: {len(early)} file(s) from the drag pasteboard", flush=True)
         if paths is not None:
             self._load(paths)
+        elif early:
+            self._load(early)           # slices show at once; drop still comes via dragEnter
         else:
             self.paths, self.rings, self.ring_names = [], {}, []
             self.hub_text = "Drop here"
@@ -241,6 +251,7 @@ class RadialMenu(QWidget):
             self.update()
 
     def _load(self, paths: list[str]):
+        paths = resolve_shortcuts(paths)
         self.paths = paths
         self.rings = {k: v for k, v in self.build_rings(paths).items() if v}
         self.ring_names = list(self.rings)
@@ -358,7 +369,7 @@ class RadialMenu(QWidget):
             e.ignore()
             return
         self.got_drag = True
-        if paths != self.paths:
+        if resolve_shortcuts(paths) != self.paths:
             self._load(paths)
         e.setDropAction(Qt.CopyAction)  # never let a Shift(=move) drop delete the source
         e.accept()
@@ -462,8 +473,27 @@ class RadialMenu(QWidget):
                 self._paint_hover(p, c, a0, a1, h, img if have_liquid else None)
             self._petal_label(p, c, it, (a0 + a1) / 2 + rot, (R_IN + R_OUT) / 2 + h * 4, h,
                               fg, shadow_col)
+        if not n and self.paths:
+            self._paint_unsupported(p, c, fg, fg_dim, shadow_col)
 
         self._paint_hub(p, c, fg, fg_dim, shadow_col)
+
+    def _paint_unsupported(self, p: QPainter, c: QPointF, fg: QColor, fg_dim: QColor,
+                           shadow_col: QColor):
+        """Nothing to offer: say so in the top band, clear of the cursor and the drag image."""
+        ext = Path(self.paths[0]).suffix.lower() or "this file"
+        f = QFont(ui_family(True))
+        f.setPixelSize(13)
+        f.setBold(True)
+        p.setFont(f)
+        r_mid = (R_IN + R_OUT) / 2
+        self._text(p, QRectF(c.x() - R_OUT, c.y() - r_mid - 18, 2 * R_OUT, 18),
+                   f"Can't convert {ext}", fg, shadow_col)
+        f.setPixelSize(10)
+        f.setBold(False)
+        p.setFont(f)
+        self._text(p, QRectF(c.x() - R_OUT, c.y() - r_mid + 1, 2 * R_OUT, 16),
+                   "Images · PDF · Word · Text", fg_dim, None)
 
     def _paint_fallback(self, p: QPainter, c: QPointF, n: int):
         hub = QPainterPath()
@@ -487,34 +517,18 @@ class RadialMenu(QWidget):
         p.translate(pc + off)
         p.scale(k, k)
         p.translate(-pc)
+        # only the glass itself moves: the slice's own refraction, enlarged — no added light
         if img is not None:
             p.save()
             p.setClipPath(path)
             p.drawImage(0, 0, img)
             p.restore()
-        # light blooming up from underneath the cursor
-        glow_c = self.cursor_pos - off
-        g = QRadialGradient(glow_c, 120)
-        g.setColorAt(0.0, QColor(255, 196, 120, int(150 * h)))
-        g.setColorAt(0.45, QColor(255, 90, 150, int(95 * h)))
-        g.setColorAt(1.0, QColor(130, 100, 255, int(40 * h)))
-        p.fillPath(path, g)
-        # brighter specular rim + iridescent edge while hovered
-        p.setPen(QPen(QColor(255, 255, 255, int(170 * h)), 1.3))
-        p.drawPath(path)
-        p.setPen(glass.iridescent_pen(c, 2.2, int(230 * h), angle=(a0 + a1) / 2))
-        p.drawPath(path)
+        else:
+            glass.paint_glass(p, path, self.backdrop, QPointF(0, 0), tint=QColor(22, 18, 34, 62),
+                              rainbow_alpha=140)
         p.restore()
 
     def _paint_hub(self, p: QPainter, c: QPointF, fg: QColor, fg_dim: QColor, shadow_col: QColor):
-        hs = self.hub_spring
-        if hs > 0.001:
-            g = QRadialGradient(c, R_HUB)
-            g.setColorAt(0, QColor(255, 255, 255, int(70 * hs)))
-            g.setColorAt(1, QColor(255, 255, 255, int(20 * hs)))
-            p.setPen(Qt.NoPen)
-            p.setBrush(g)
-            p.drawEllipse(c, R_HUB, R_HUB)
         p.setPen(glass.iridescent_pen(c, 1.2, 150, angle=60))
         p.setBrush(Qt.NoBrush)
         p.drawEllipse(c, R_HUB - 0.5, R_HUB - 0.5)
@@ -531,7 +545,7 @@ class RadialMenu(QWidget):
                 sub = f"⇧ {other.upper()}"
             else:
                 sub = ring_name.upper()
-        f = QFont("Segoe UI Variable Display", 1)
+        f = QFont(ui_family(True))
         fs = getattr(self, "font_scale", 1.0)
         f.setPixelSize(int(14 * fs))
         f.setBold(True)
@@ -561,7 +575,7 @@ class RadialMenu(QWidget):
         p.save()
         p.setOpacity(p.opacity() * (0.25 + 0.75 * self._swap))
         col = QColor(255, 255, 255) if h > 0.5 else fg   # hovered petal is warm-lit: white text
-        f = QFont("Segoe UI Variable Display", 1)
+        f = QFont(ui_family(True))
         fs = getattr(self, "font_scale", 1.0)
         if it.glyph:
             f.setPixelSize(int((18 + 3 * h) * fs))
