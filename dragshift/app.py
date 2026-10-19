@@ -24,7 +24,6 @@ from .util import UserError, category, file_size, human_size, keep, release
 APP_NAME = "DragShift"
 TIP_PAYPAL = "https://paypal.me/KevinLamarque"
 TIP_COFFEE = "https://buymeacoffee.com/kevindevm"
-TIP_CASHAPP = "https://cash.app/$AtikaKadesha"
 VERSION = __version__
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
@@ -262,12 +261,12 @@ class DragShiftApp(QObject):
         tip = m.addMenu(_trm("Tip the developer ♥"))
         tip.addAction("PayPal", lambda: QDesktopServices.openUrl(QUrl(TIP_PAYPAL)))
         tip.addAction(_trm("Buy me a coffee"), lambda: QDesktopServices.openUrl(QUrl(TIP_COFFEE)))
-        tip.addSeparator()
-        tip.addAction(_trm("Cash App (secondary)"), lambda: QDesktopServices.openUrl(QUrl(TIP_CASHAPP)))
         m.addSeparator()
         m.addAction(_trm("Backup settings…"), self._backup_settings)
         m.addAction(_trm("Restore settings…"), self._restore_settings)
         m.addAction(_trm("Check for updates…"), self._check_updates)
+        self.act_download = m.addAction(_trm("Download update…"), self._download_update)
+        self.act_download.setEnabled(False)
         m.addSeparator()
         m.addAction(f"{_trm('Quit DragShift')}", self.qapp.quit)
         self.tray_menu = m
@@ -831,13 +830,12 @@ class DragShiftApp(QObject):
 
     # ------------------------------------------------------------ misc
     def _tray_click(self, reason):
-        # double-click opens Settings; single click opens a file (Windows)
+        # double-click opens Settings; single click does nothing (avoids the
+        # dialog + settings double-fire Windows sends on double-click)
         if IS_MAC:
             return  # macOS: the menu-bar click shows the menu
         if reason == QSystemTrayIcon.DoubleClick:
             self.open_settings()
-        elif reason == QSystemTrayIcon.Trigger:
-            self.open_dialog()
 
     def open_dialog(self):
         from .i18n import tr as _trd
@@ -915,17 +913,40 @@ class DragShiftApp(QObject):
                 self.settings.set("last_update_check", today)
             newer, tag, url = updater.check()
             if newer:
+                self._update_url = url
+                try:
+                    self.act_download.setEnabled(True)
+                except Exception:
+                    pass
                 if auto:
-                    self.toasts.info("Update available", f"{tag} — tray menu → Check for updates to open it.")
-                    self._update_url = url
+                    self.toasts.info("Update available", f"{tag} — tray menu → Download update…")
                 else:
-                    from PySide6.QtGui import QDesktopServices
-                    from PySide6.QtCore import QUrl
-                    QDesktopServices.openUrl(QUrl(url or "https://github.com/kevindevm/DragShift/releases/latest"))
+                    self._download_update()
             elif not auto:
                 self.toasts.info("Up to date", f"DragShift {VERSION} is the newest release.")
         except Exception:
             pass
+
+    def _download_update(self):
+        url = getattr(self, "_update_url", "")
+        if not url:
+            try:
+                from . import updater
+                newer, _tag, url = updater.check()
+                if newer and url:
+                    self._update_url = url
+                    try:
+                        self.act_download.setEnabled(True)
+                    except Exception:
+                        pass
+                else:
+                    self.toasts.info("Up to date", f"DragShift {VERSION} is the newest release.")
+                    return
+            except Exception:
+                return
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl(url or "https://github.com/kevindevm/DragShift/releases/latest"))
 
     def show_welcome(self):
         self.open_window(WelcomeWindow(self.settings, self.trigger_label()))

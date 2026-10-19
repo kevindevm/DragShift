@@ -284,8 +284,13 @@ class SettingsWindow(GlassWindow):
         self.body.addLayout(foot)
 
     def _open_engines(self):
-        w = EnginesWindow()
-        w.show()
+        win = getattr(self, "_engines_win", None)
+        if win is None:
+            win = EnginesWindow()
+            self._engines_win = win
+        win.show()
+        win.raise_()
+        win.activateWindow()
 
     def _save(self, key, value):
         self.s.set(key, value)

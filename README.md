@@ -105,7 +105,6 @@ DragShift is free, by **kevindevm**. If it saves you time, you can leave a tip:
 
 - **PayPal:** [paypal.me/KevinLamarque](https://paypal.me/KevinLamarque)
 - **Buy me a coffee:** [buymeacoffee.com/kevindevm](https://buymeacoffee.com/kevindevm)
-- Secondary, Cash App: [**$AtikaKadesha**](https://cash.app/$AtikaKadesha)
 
 Thank you!
 

@@ -62,7 +62,7 @@ ES = {
     "Tip the developer ♥": "Invitar al desarrollador ♥",
     "PayPal": "PayPal",
     "Buy me a coffee": "Invítame un café",
-    "Cash App (secondary)": "Cash App (secundaria)",
+    "Download update…": "Descargar actualización…",
     "Language": "Idioma",
     # welcome
     "Welcome to DragShift": "Bienvenido a DragShift",
@@ -458,12 +458,6 @@ ES = {
     "press": "pulsa",
     "while dragging a file": "mientras arrastras un archivo",
     "Enabled": "Activado",
-    "Backup settings…": "Respaldar ajustes…",
-    "Restore settings…": "Restaurar ajustes…",
-    "Check for updates…": "Buscar actualizaciones…",
-    "Quit DragShift": "Salir de DragShift",
-    "Open a file…": "Abrir archivo…",
-    "Choose file(s) for DragShift": "Elige archivo(s) para DragShift",
     "ZIP bundle": "Paquete ZIP",
     "Trim media": "Recortar medio",
 }
