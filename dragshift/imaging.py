@@ -544,3 +544,62 @@ def pil_to_png_bytes(im: Image.Image) -> bytes:
     buf = io.BytesIO()
     im.save(buf, "PNG")
     return buf.getvalue()
+
+
+def palette(src: str | Path, n: int = 6) -> tuple[list[str], Path]:
+    """Dominant colors of an image → (hex list, swatch PNG)."""
+    from .convert import flatten, open_image
+    from .util import sibling
+    im = flatten(open_image(src)).convert("RGB")
+    im.thumbnail((240, 240), Image.LANCZOS)
+    q = im.quantize(colors=max(2, min(12, n)), method=Image.Quantize.FASTOCTREE)
+    pal = q.getpalette()[: n * 3]
+    colors = [f"#{pal[i*3]:02x}{pal[i*3+1]:02x}{pal[i*3+2]:02x}" for i in range(n)]
+    sw = Image.new("RGB", (120 * n, 120))
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(sw)
+    for i, c in enumerate(colors):
+        d.rectangle((i * 120, 0, (i + 1) * 120, 120), fill=c)
+    out = sibling(src, "Palette", ".png")
+    sw.save(out, "PNG")
+    return colors, out
+
+
+def pdf_outline(src: str | Path) -> str:
+    """Extract TOC + headings-by-font-size + per-page top terms (no AI)."""
+    from .convert import open_pdf
+    from collections import Counter
+    import re as _re
+    lines = [f"# Outline: {Path(src).name}", ""]
+    with open_pdf(src) as doc:
+        toc = doc.get_toc()
+        if toc:
+            lines.append("## Contents")
+            for lvl, title, page in toc[:60]:
+                lines.append(f"{'  ' * (lvl - 1)}- {title} (p. {page})")
+            lines.append("")
+        for pno, page in enumerate(doc):
+            if pno >= 12:
+                lines.append(f"_… ({doc.page_count - 12} more pages)_")
+                break
+            d = page.get_text("dict")
+            sizes: dict[float, list[str]] = {}
+            for b in d.get("blocks", []):
+                for ln in b.get("lines", []):
+                    txt = "".join(s.get("text", "") for s in ln.get("spans", [])).strip()
+                    if not txt:
+                        continue
+                    mx = max((s.get("size", 0) for s in ln.get("spans", [])), default=0)
+                    sizes.setdefault(round(mx, 1), []).append(txt)
+            if not sizes:
+                continue
+            big = sorted(sizes, reverse=True)[:2]
+            head = " — ".join(sizes[big[0]][0][:100] for _ in [0])
+            lines.append(f"## p{pno + 1}: {head[:100]}")
+            words = _re.findall(r"[A-Za-zÀ-ÿ]{4,}", " ".join(sum(sizes.values(), [])))
+            stop = {"this", "that", "with", "from", "have", "will", "page", "para"}
+            top = [w for w, _ in Counter(w.lower() for w in words if w.lower() not in stop).most_common(5)]
+            if top:
+                lines.append(f"top: {', '.join(top)}")
+            lines.append("")
+    return "\n".join(lines)

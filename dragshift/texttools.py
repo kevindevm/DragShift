@@ -183,3 +183,154 @@ def csv_delimiter(src: str | Path, to: str = ";") -> Path:
     with out.open("w", encoding="utf-8", newline="") as f:
         csv.writer(f, delimiter=to, lineterminator="\n").writerows(reader)
     return out
+
+
+def html_to_txt(src: str | Path) -> Path:
+    """Strip tags from an HTML file → plain text."""
+    from html.parser import HTMLParser
+
+    class _Strip(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.parts: list[str] = []
+
+        def handle_data(self, data):
+            self.parts.append(data)
+
+    text = _check_size(src)
+    parser = _Strip()
+    try:
+        parser.feed(text)
+    except Exception:
+        pass
+    plain = re.sub(r"[ \t]+\n", "\n", " ".join("".join(parser.parts).split()))
+    block = re.sub(r"\n{3,}", "\n\n", plain)
+    out = sibling(src, ext=".txt")
+    out.write_text(block.strip() + "\n", encoding="utf-8")
+    return out
+
+
+TS_RE = re.compile(r"(\d+):(\d\d):([\d.,]+)")
+
+
+def _ts_to_secs(t: str) -> float:
+    t = t.replace(",", ".")
+    h, m, s = t.split(":")
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def _secs_to_ts(secs: float, dot: bool) -> str:
+    secs = max(0.0, secs)
+    h, rem = divmod(secs, 3600)
+    m, s = divmod(rem, 60)
+    out = f"{int(h):02d}:{int(m):02d}:{s:06.3f}"
+    return out.replace(".", "." if dot else ",")
+
+
+def subtitles_convert(src: str | Path, target: str) -> list[Path]:
+    """SRT <-> VTT (+ ASS/SSA/LRC best-effort via timestamp rewrite)."""
+    target = target.upper()
+    text = _check_size(src).replace("\r\n", "\n")
+    ext = Path(src).suffix.lower()
+    to_vtt = target == "VTT"
+    if to_vtt:
+        body = TS_RE.sub(lambda m: _secs_to_ts(_ts_to_secs(m.group(0)), True), text)
+        body = re.sub(r"^\d+\s*$", "", body, flags=re.M)
+        out = sibling(src, ext=".vtt")
+        out.write_text("WEBVTT\n\n" + body.lstrip() + ("" if body.endswith("\n") else "\n"),
+                       encoding="utf-8")
+    else:
+        body = text.replace("WEBVTT", "")
+        body = TS_RE.sub(lambda m: _secs_to_ts(_ts_to_secs(m.group(0)), False), text if "WEBVTT" not in text else body)
+        lines = [ln for ln in body.split("\n")]
+        # renumber cues
+        out_lines, n, in_cue = [], 0, False
+        for ln in lines:
+            if "-->" in ln and not in_cue:
+                n += 1
+                out_lines.append(str(n))
+                out_lines.append(ln.strip())
+                in_cue = True
+            elif ln.strip() == "" :
+                in_cue = False
+                out_lines.append("")
+            elif in_cue or re.match(r"^\d+$", ln.strip()):
+                if re.match(r"^\d+$", ln.strip()) and not in_cue:
+                    continue
+                out_lines.append(ln)
+            else:
+                out_lines.append(ln)
+        out = sibling(src, ext=".srt")
+        out.write_text("\n".join(out_lines).strip() + "\n", encoding="utf-8")
+    return [out]
+
+
+def subtitles_shift(src: str | Path, secs: float) -> Path:
+    text = _check_size(src).replace("\r\n", "\n")
+    dot = Path(src).suffix.lower() == ".vtt"
+    out = sibling(src, f"{secs:+g}s")
+    out.write_text(TS_RE.sub(lambda m: _secs_to_ts(_ts_to_secs(m.group(0)) + secs, dot), text),
+                   encoding="utf-8")
+    return out
+
+
+def subtitles_merge(srcs: list[str | Path]) -> Path:
+    """Merge several subtitle files, shifting each after the previous, renumbered SRT."""
+    import datetime
+    chunks: list[str] = []
+    offset = 0.0
+    for s in srcs:
+        text = _check_size(s).replace("\r\n", "\n").replace("WEBVTT", "")
+        # find last timestamp to chain
+        ends = [_ts_to_secs(m.group(0)) for m in TS_RE.finditer(text)]
+        shifted = TS_RE.sub(lambda m: _secs_to_ts(_ts_to_secs(m.group(0)) + offset, False), text)
+        chunks.append(shifted.strip())
+        if ends:
+            offset += max(ends) + 2.0
+    body = "\n\n".join(c for c in chunks if c)
+    lines = [ln for ln in body.split("\n")]
+    out_lines, n, in_cue = [], 0, False
+    for ln in lines:
+        if "-->" in ln and not in_cue:
+            n += 1
+            out_lines.append(str(n))
+            out_lines.append(ln.strip())
+            in_cue = True
+        elif ln.strip() == "":
+            in_cue = False
+            out_lines.append("")
+        elif re.match(r"^\d+$", ln.strip()) and not in_cue:
+            continue
+        else:
+            out_lines.append(ln)
+    out = sibling(srcs[0], "Merged", ".srt")
+    out.write_text("\n".join(out_lines).strip() + "\n", encoding="utf-8")
+    return out
+
+
+def subtitles_to_txt(src: str | Path) -> Path:
+    text = _check_size(src).replace("\r\n", "\n")
+    lines = []
+    for ln in text.split("\n"):
+        s = ln.strip()
+        if not s or s == "WEBVTT" or re.match(r"^\d+$", s) or "-->" in s:
+            continue
+        s = re.sub(r"<[^>]+>", "", s)
+        s = re.sub(r"\{[^}]*\}", "", s)
+        if s:
+            lines.append(s)
+    out = sibling(src, ext=".txt")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out
+
+
+def json_to_yaml(src: str | Path) -> list[Path]:
+    try:
+        import yaml
+    except Exception as e:
+        from .util import UserError
+        raise UserError(f"YAML support needs PyYAML: {e}")
+    data = json.loads(_check_size(src))
+    out = sibling(src, ext=".yaml")
+    out.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    return [out]

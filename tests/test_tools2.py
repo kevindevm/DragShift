@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from dragshift import convert, filetools, multitools, sheettools, texttools
+from dragshift import imaging
 from dragshift.util import category, sibling
 
 
@@ -93,3 +94,68 @@ def test_history_and_trim_validation(tmp_path):
         mediatools.trim_media(f, 20, 5)
     with _pt.raises(UserError):
         mediatools.concat_same([str(f)])
+
+
+def test_new_categories(tmp_path):
+    from dragshift import nbtools
+    from dragshift.util import category
+    assert category(str(tmp_path / "a.srt")) == "subtitle"
+    assert category(str(tmp_path / "a.vtt")) == "subtitle"
+    assert category(str(tmp_path / "n.ipynb")) == "notebook"
+    assert category(str(tmp_path / "m.eml")) == "email"
+    assert category(str(tmp_path / "c.vcf")) == "contact"
+    assert category(str(tmp_path / "e.ics")) == "contact"
+    assert category(str(tmp_path / "f.ttf")) == "font"
+    assert category(str(tmp_path / "d.csv")) == "sheet"
+    s = tmp_path / "s.srt"
+    s.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n")
+    v = convert.convert(s, "subtitle", "VTT")[0]
+    assert v.suffix == ".vtt" and "WEBVTT" in v.read_text()
+    assert convert.convert(v, "subtitle", "SRT")[0].suffix == ".srt"
+    assert "Hello" in convert.convert(s, "subtitle", "TXT")[0].read_text()
+    nb = tmp_path / "n.ipynb"
+    nb.write_text('{"cells": [{"cell_type": "code", "source": ["print(1)"]}], "nbformat": 4, "nbformat_minor": 5}')
+    assert "print(1)" in convert.convert(nb, "notebook", "PY")[0].read_text()
+    assert convert.convert(nb, "notebook", "HTML")[0].suffix == ".html"
+    em = tmp_path / "m.eml"
+    em.write_text("From: a@b.c\nSubject: hi\nContent-Type: text/plain\n\nbody here\n")
+    assert "body here" in convert.convert(em, "email", "TXT")[0].read_text()
+    vc = tmp_path / "c.vcf"
+    vc.write_text("BEGIN:VCARD\nFN:Alice\nTEL:123\nEND:VCARD\n")
+    assert "Alice" in convert.convert(vc, "contact", "CSV")[0].read_text()
+    assert "Alice" in nbtools.contact_to_txt(vc)[0].read_text()
+    h = tmp_path / "h.html"
+    h.write_text("<h1>Hola</h1><p>mundo</p>")
+    t = convert.convert(h, "text", "TXT")[0]
+    assert "Hola" in t.read_text() and "<h1>" not in t.read_text()
+    md = tmp_path / "r.md"
+    md.write_text("# H\n**b**\n")
+    mh = convert.convert(md, "text", "HTML")[0].read_text()
+    assert "<h1>H</h1>" in mh and "<pre>" not in mh
+    x = tmp_path / "x.json"
+    x.write_text('{"a": 1}')
+    assert "a:" in convert.convert(x, "text", "YAML")[0].read_text()
+    y = tmp_path / "y.yaml"
+    y.write_text("a: 1\n")
+    assert convert.convert(y, "text", "TOML")[0].suffix == ".toml"
+    dx = tmp_path / "d.docx"
+    from docx import Document
+    Document().add_paragraph("hi")._element  # noqa
+    _d = Document()
+    _d.add_paragraph("hi")
+    _d.save(dx)
+    assert "<p>" in convert.convert(dx, "docx", "HTML")[0].read_text()
+    from PIL import Image
+    im = tmp_path / "im.png"
+    Image.new("RGB", (64, 48), (200, 40, 40)).save(im)
+    colors, sw = imaging.palette(im)
+    assert len(colors) == 6 and sw.exists()
+    pdf = convert.convert(im, "image", "PDF")[0]
+    assert "Outline" in imaging.pdf_outline(pdf)
+    d1 = tmp_path / "d1.txt"
+    d1.write_text("same")
+    d2 = tmp_path / "d2.txt"
+    d2.write_text("same")
+    assert "Duplicates" in filetools.find_duplicates([str(d1), str(d2)]).name
+    rep = filetools.folder_report(tmp_path)
+    assert rep.exists() and "files" in rep.read_text()

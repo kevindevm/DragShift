@@ -223,6 +223,20 @@ class SettingsWindow(GlassWindow):
         self.s.set(key, value)
         self.changed.emit()
 
+    def export(self, path):
+        import json
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({k: self.s.get(k) for k in DEFAULTS}, f, indent=2, ensure_ascii=False)
+
+    def import_(self, path):
+        import json
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        for k, v in data.items():
+            if k in DEFAULTS:
+                self.s.set(k, v)
+        self.apply()
+
 
 class WelcomeWindow(GlassWindow):
     def __init__(self, settings: Settings, trigger_label: str = "Shift"):

@@ -153,14 +153,20 @@ def summarize(action: str, srcs: list, outs: list, extra: str = "") -> Result:
 
     if name in ("Voice", "Sample", "CleanTags", "Mute", "ZIP", "Hash", "B64", "QR",
                 "Contact", "GIF", "Playlist", "Diff", "Portfolio", "SplitFile",
-                "Join", "Subs", "Loud", "Trim"):
+                "Join", "Subs", "Loud", "Trim", "Shift", "Merge", "Strip", "Code",
+                "Attach", "Specimen", "Duplicates", "Palette", "Outline", "Folder"):
         verb = {"Voice": "Voice MP3", "Sample": "Sampled", "CleanTags": "Metadata cleaned",
                 "Mute": "Muted", "ZIP": f"Zipped {len(srcs)} files", "Hash": "Hashed (SHA-256)",
                 "B64": "Base64 encoded", "QR": "QR code", "Contact": "Contact sheet",
                 "GIF": "Animated GIF", "Playlist": "Playlist .m3u", "Diff": "Diff HTML",
                 "Portfolio": "Portfolio PDF", "SplitFile": "Split",
                 "Join": "Joined media", "Subs": "Subtitles extracted",
-                "Loud": "Loudness normalized", "Trim": "Trimmed"}[name]
+                "Loud": "Loudness normalized", "Trim": "Trimmed",
+                "Shift": "Subtitles shifted", "Merge": "Merged", "Strip": "Outputs stripped",
+                "Code": "Code extracted", "Attach": "Attachments extracted",
+                "Specimen": "Specimen rendered", "Duplicates": "Duplicates found",
+                "Palette": "Palette sampled", "Outline": "Outline extracted",
+                "Folder": "Folder scanned"}[name]
         return Result(verb, f"{o0.name} · {human_size(after)}", outs, srcs)
 
     # generic

@@ -68,6 +68,15 @@ IMAGE_TOOLS = ["Compress", "Resize", "Crop", "Edit", "Annotate", "Redact", "Add 
 PDF_TOOLS = ["Compress", "Split", "Rotate", "Protect", "Extract", "Metadata"]
 AUDIO_TOOLS = ["Voice", "Sample", "CleanTags", "Loud", "Trim"]
 VIDEO_TOOLS = ["Voice", "Sample", "CleanTags", "Mute", "Subs", "Loud", "Trim"]
+SUBTITLE_TOOLS = ["Shift", "Merge"]
+NOTEBOOK_TOOLS = ["Strip", "Code"]
+EMAIL_TOOLS = ["Attach"]
+CONTACT_TOOLS = ["Merge"]
+FONT_TOOLS = ["Specimen"]
+PRESETS = {
+    "web-small": {"tool": "Compress", "q": 70, "side": 1920, "fmt": "JPG", "strip": True},
+    "voice-note": {"tool": "Voice"},
+}
 
 
 def text_tools_for(path: str) -> list[str]:
@@ -216,6 +225,9 @@ class DragShiftApp(QObject):
         m.addAction("How to use", self.show_welcome)
         m.addAction("Tip the developer ♥", lambda: QDesktopServices.openUrl(QUrl(TIP_URL)))
         m.addSeparator()
+        m.addAction("Backup settings…", self._backup_settings)
+        m.addAction("Restore settings…", self._restore_settings)
+        m.addSeparator()
         m.addAction(f"Quit {APP_NAME}", self.qapp.quit)
         self.tray_menu = m
         self.tray.setContextMenu(m)
@@ -321,6 +333,24 @@ class DragShiftApp(QObject):
         elif cat == "video":
             rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
                               for n in VIDEO_TOOLS]
+        elif cat == "subtitle":
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Shift ±s" if n == "Shift" else "Merge subs"))
+                              for n in SUBTITLE_TOOLS]
+        elif cat == "notebook":
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+                              for n in NOTEBOOK_TOOLS]
+        elif cat == "email":
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Save attachments"))
+                              for n in EMAIL_TOOLS]
+        elif cat == "contact":
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Merge cards"))
+                              for n in CONTACT_TOOLS]
+        elif cat == "font":
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Specimen sheet"))
+                              for n in FONT_TOOLS]
+        # presets ring for images/audio
+        if cat in ("image", "audio") and PRESETS:
+            rings["Presets"] = [Item(n, "★", key=f"preset:{n}", hint="One-click preset") for n in PRESETS]
         # multi-file extras live on a second ring regardless of cat
         extras: list[Item] = []
         if len(paths) > 1 and len(same) == len(paths):
@@ -338,6 +368,13 @@ class DragShiftApp(QObject):
         if len(paths) > 1 or cat in ("sheet", "presentation", "ebook"):
             extras += [Item("ZIP", GLYPHS["ZIP"], key="tool:ZIP", hint=HINTS["ZIP"]),
                        Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=HINTS["Hash"])]
+            if cat in ("image", "audio", "video", "text") and len(paths) > 1:
+                extras.append(Item("Duplicates", "⧉", key="tool:Duplicates",
+                                   hint="Find duplicates"))
+        if cat == "image" and len(paths) == 1:
+            extras.append(Item("Palette", "🎨", key="tool:Palette", hint="Color palette"))
+        if cat == "pdf":
+            extras.append(Item("Outline", "🗂", key="tool:Outline", hint="Extract outline"))
         if extras:
             rings["Bundle"] = extras
         try:
@@ -358,8 +395,20 @@ class DragShiftApp(QObject):
             self.settings.set("mru", mru)
         except Exception:
             pass
+        if kind == "preset":
+            p = PRESETS.get(name, {})
+            if p.get("tool") == "Compress":
+                self.submit(f"preset:{name}", paths,
+                            lambda: [imaging.compress_to(x, p["q"], p["side"], p["fmt"]) for p in paths],
+                            f"Preset {name}…")
+            elif p.get("tool") == "Voice":
+                from . import mediatools
+                self.submit(f"preset:{name}", paths,
+                            lambda: [mediatools.audio_voice(x) for x in paths], f"Preset {name}…")
+            return
         if cat is None or name in ("ZIP", "Hash", "B64", "Portfolio", "Diff", "Playlist",
-                                   "Contact", "GIF", "Join"):
+                                   "Contact", "GIF", "Join", "Duplicates", "Palette",
+                                   "Outline", "Folder", "QR", "SplitFile"):
             from . import filetools, multitools
             if name == "ZIP":
                 all_paths = paths  # bundle the mixed selection as dropped
@@ -405,6 +454,34 @@ class DragShiftApp(QObject):
             elif name == "GIF":
                 self.submit("tool:GIF", paths, lambda: [multitools.images_to_gif(paths)],
                             "Animating…")
+            elif name == "Join":
+                from . import mediatools
+                self.submit("tool:Join", paths, lambda: [mediatools.concat_same(paths)],
+                            "Joining…")
+            elif name == "Duplicates":
+                self.submit("tool:Duplicates", paths, lambda: [filetools.find_duplicates(paths)],
+                            "Finding duplicates…")
+            elif name == "Palette":
+                self.submit("tool:Palette", paths,
+                            lambda: [imaging.palette(p)[1] for p in paths], "Sampling colors…")
+            elif name == "Outline":
+                def _outline(p: str):
+                    from pathlib import Path as _P
+                    from .util import sibling as _sib
+                    out = _sib(p, "Outline", ".md")
+                    out.write_text(imaging.pdf_outline(p), encoding="utf-8")
+                    return out
+                self.submit("tool:Outline", paths, lambda: [_outline(p) for p in paths],
+                            "Outlining…")
+            elif name == "Folder":
+                self.submit("tool:Folder", paths, lambda: [filetools.folder_report(paths[0])],
+                            "Scanning folder…")
+            elif name == "QR":
+                self.submit("tool:QR", paths, lambda: [filetools.qr_of_text(p) for p in paths],
+                            "QR…")
+            elif name == "SplitFile":
+                self.submit("tool:SplitFile", paths,
+                            lambda: [o for p in paths for o in filetools.split_file(p)], "Splitting…")
             return
         paths = [p for p in paths if category(p) == cat]
         kind, name = item.key.split(":", 1)
@@ -497,6 +574,52 @@ class DragShiftApp(QObject):
             else:
                 self.submit("tool:Hash", paths, lambda: [filetools.sha256_file(p) for p in paths],
                             "Hashing…")
+            return
+        if cat == "subtitle":
+            from . import texttools
+            if name == "Shift":
+                try:
+                    from PySide6.QtWidgets import QInputDialog
+                    text, ok = QInputDialog.getText(None, "Shift subtitles",
+                                                   "Seconds (+/-), e.g. 1.5 or -2:")
+                    if not ok:
+                        return
+                    secs = float(text.strip())
+                except Exception:
+                    self.toasts.error("Shift", "Use a number like 1.5 or -2.")
+                    return
+                self.submit("tool:Shift", paths,
+                            lambda: [texttools.subtitles_shift(p, secs) for p in paths], "Shifting…")
+            elif name == "Merge":
+                self.submit("tool:Merge", paths, lambda: [texttools.subtitles_merge(paths)],
+                            "Merging subs…")
+            return
+        if cat == "notebook":
+            from . import nbtools
+            if name == "Strip":
+                self.submit("tool:Strip", paths, lambda: [nbtools.ipynb_strip(p) for p in paths],
+                            "Stripping outputs…")
+            elif name == "Code":
+                self.submit("tool:Code", paths,
+                            lambda: [o for p in paths for o in nbtools.ipynb_to_py(p)], "Extracting code…")
+            return
+        if cat == "email":
+            from . import nbtools
+            if name == "Attach":
+                self.submit("tool:Attach", paths,
+                            lambda: [o for p in paths for o in nbtools.eml_attachments(p)],
+                            "Extracting…")
+            return
+        if cat == "contact":
+            from . import nbtools
+            if name == "Merge":
+                self.submit("tool:Merge", paths, lambda: [nbtools.contact_merge(paths)], "Merging…")
+            return
+        if cat == "font":
+            from . import nbtools
+            if name == "Specimen":
+                self.submit("tool:Specimen", paths,
+                            lambda: [o for p in paths for o in nbtools.font_specimen(p)], "Rendering…")
             return
         windows = {"Crop": tools.CropWindow, "Add BG": tools.AddBgWindow, "Annotate": tools.AnnotateWindow,
                    "Redact": tools.RedactWindow, "Edit": tools.EditWindow, "Metadata": tools.MetadataWindow}
@@ -599,6 +722,29 @@ class DragShiftApp(QObject):
         w = SettingsWindow(self.settings)
         w.changed.connect(self._settings_changed)
         self.open_window(w)
+
+    def _backup_settings(self):
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(None, "Backup DragShift settings", "dragshift-settings.json",
+                                              "JSON (*.json)")
+        if path:
+            try:
+                SettingsWindow(self.settings).export(path)
+                self.toasts.info("Settings", f"Backed up to {Path(path).name}")
+            except Exception as e:
+                self.toasts.error("Settings", str(e))
+
+    def _restore_settings(self):
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(None, "Restore DragShift settings", "",
+                                              "JSON (*.json)")
+        if path:
+            try:
+                SettingsWindow(self.settings).import_(path)
+                self._settings_changed()
+                self.toasts.info("Settings", "Restored.")
+            except Exception as e:
+                self.toasts.error("Settings", str(e))
 
     def _open_recent(self, outs: list[str]):
         from PySide6.QtGui import QDesktopServices
@@ -707,20 +853,56 @@ def main(argv: list[str] | None = None) -> int:
     if "--selftest" in argv:
         return selftest()
     # headless scripting: DragShift.exe *.png --convert-to JPG [--out-dir DIR] [--tool tool:Hash]
-    if "--no-ui" in argv or "--convert-to" in argv or "--tool" in argv:
+    #   --preset web-small | --dry-run | --export-set s.json | --import-set s.json
+    if "--no-ui" in argv or "--convert-to" in argv or "--tool" in argv or "--preset" in argv \
+            or "--export-set" in argv or "--import-set" in argv or "--dry-run" in argv:
         try:
-            out_dir = None
-            if "--out-dir" in argv:
-                out_dir = argv[argv.index("--out-dir") + 1]
-                from .util import CONFIG
-                CONFIG["output"] = "next"
+            from .settings import Settings as _Set
+            if "--export-set" in argv:
+                _Set().export(argv[argv.index("--export-set") + 1])
+                print("OK settings exported")
+                return 0
+            if "--import-set" in argv:
+                _Set().import_(argv[argv.index("--import-set") + 1])
+                print("OK settings imported")
+                return 0
+            dry = "--dry-run" in argv
+            vals = {"--out-dir", "--convert-to", "--tool", "--preset"}
+            taken = set()
+            for _flag in vals:
+                if _flag in argv:
+                    taken.add(argv[argv.index(_flag) + 1])
+            out_dir = argv[argv.index("--out-dir") + 1] if "--out-dir" in argv else None
             conv = argv[argv.index("--convert-to") + 1].upper() if "--convert-to" in argv else None
             tool = argv[argv.index("--tool") + 1] if "--tool" in argv else None
+            preset = argv[argv.index("--preset") + 1] if "--preset" in argv else None
             files = [os.path.abspath(a) for a in argv[1:]
-                     if not a.startswith("-") and a not in (out_dir,) and os.path.exists(a)]
-            if out_dir:
-                os.environ["DRAGSHIFT_OUT"] = out_dir
-            from .util import category as _cat
+                     if a not in taken and not a.startswith("--") and os.path.exists(a)]
+            from .util import category as _cat, sibling as _sib
+            if preset:
+                from .app import PRESETS as _P
+                if preset not in _P:
+                    print(f"ERROR: unknown preset {preset} (web-small, voice-note)")
+                    return 2
+                if dry or "--no-ui" in argv:
+                    for f in files:
+                        if dry:
+                            print(f"WOULD preset:{preset} {f}")
+                            continue
+                        c = _cat(f)
+                        if c == "image":
+                            from . import imaging
+                            p = _P[preset]
+                            o = imaging.compress_to(f, p["q"], p["side"], p["fmt"]) if p.get("tool") == "Compress" else None
+                            print(f"OK {f} -> {o}")
+                        elif c in ("audio", "video"):
+                            from . import mediatools
+                            print(f"OK {f} -> {mediatools.audio_voice(f)}")
+                    return 0
+            if dry and (conv or tool or preset):
+                for f in files:
+                    print(f"WOULD {conv or tool or 'preset:' + str(preset)} {f} -> {str(_sib(f, 'Preview'))}")
+                return 0
             if conv:
                 for f in files:
                     c = _cat(f)
@@ -826,6 +1008,16 @@ def selftest() -> int:
             assert filetools.decrypt_file(enc, "pw123").read_bytes() == env.read_bytes()
             filetools.qr_of_text(env)
             filetools.b64_decode(filetools.b64_encode(env))
+            # new cats quick check
+            srt = Path(d) / "s.srt"
+            srt.write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n")
+            convert.convert(srt, "subtitle", "VTT")
+            nb = Path(d) / "n.ipynb"
+            nb.write_text('{"cells": [], "nbformat": 4, "nbformat_minor": 5}')
+            convert.convert(nb, "notebook", "PY")
+            em = Path(d) / "m.eml"
+            em.write_text("From: a@b.c\nSubject: hi\nContent-Type: text/plain\n\nbody\n")
+            convert.convert(em, "email", "TXT")
             try:
                 from pptx import Presentation
                 prs = Presentation()

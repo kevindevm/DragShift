@@ -36,6 +36,11 @@ def _rows_of_xlsx(src: str | Path) -> tuple[list[str], list[list]]:
 
 def sheet_to_csv(src: str | Path) -> list[Path]:
     ext = Path(src).suffix.lower()
+    if ext in (".csv", ".tsv", ".tab", ".psv"):
+        from .convert import read_text
+        out = sibling(src, "Normalized", ".csv")
+        out.write_text(read_text(src).replace("\r\n", "\n"), encoding="utf-8")
+        return [out]
     if ext == ".xlsx":
         header, rows = _rows_of_xlsx(src)
         out = sibling(src, ext=".csv")
@@ -177,6 +182,24 @@ def sheet_to_txt(src: str | Path) -> list[Path]:
     csvp = sheet_to_csv(src)[0]
     out = sibling(src, ext=".txt")
     out.write_text(csvp.read_text(encoding="utf-8"), encoding="utf-8")
+    return [out]
+
+
+def yaml_to_toml(src: str | Path) -> list[Path]:
+    try:
+        import yaml
+    except Exception as e:
+        raise UserError(f"YAML support needs PyYAML: {e}")
+    try:
+        import tomli_w
+    except Exception as e:
+        raise UserError(f"TOML support needs tomli-w: {e}")
+    data = yaml.safe_load(read_text(src))
+    if not isinstance(data, dict):
+        raise UserError("TOML needs a top-level mapping; this YAML is a list/scalar.")
+    out = sibling(src, ext=".toml")
+    with out.open("wb") as f:
+        tomli_w.dump(data, f)
     return [out]
 
 

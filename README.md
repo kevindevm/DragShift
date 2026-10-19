@@ -70,6 +70,11 @@ You can also right-click a file → **DragShift…**, use **Send to → DragShif
 | Video (.mp4, .mkv, .webm, .mov, .avi…) | MP4, WEBM, MKV, MP3, WAV, GIF, PNG (thumb) | **Voice** · **Sample** · **CleanTags** · **Mute** · Compress 720p |
 | Sheets & data (.xlsx, .ods, .csv, .sqlite/.db, .yaml) | CSV, XLSX, HTML, PDF, TXT (+ YAML→JSON) | ZIP · Hash · merge multi-hoja |
 | Slides & ebooks (.pptx, .epub) | PDF, TXT, HTML (+ DOCX for epub) | ZIP · Hash |
+| Subtitles (.srt, .vtt, .ass) | SRT, VTT, TXT (clean) | **Shift ±s** · **Merge** |
+| Notebooks (.ipynb) | PY, HTML, TXT, PDF | **Strip outputs** · **Code only** |
+| Emails (.eml) | TXT, HTML, PDF | **Extract attachments** |
+| Contacts & calendar (.vcf, .ics) | CSV, TXT, HTML | **Merge** (.vcf) |
+| Fonts (.ttf, .otf, .woff2) | PNG/TXT specimen, PDF | **Specimen** · metadata |
 | Multi-file (any mix) | — | **ZIP bundle** · **Portfolio PDF** · **Diff** (2 texts → HTML) · **Contact sheet / GIF** (images) · **Playlist .m3u** (audio/video) · **Hash / B64 / QR / Split / Encrypt** |
 
 **Settings** (tray menu): trigger key (Shift, Ctrl or Alt), where results go (next to the original or a `DragShift` subfolder), JPG/WebP quality, PDF → image resolution, and start at login.

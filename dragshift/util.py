@@ -8,18 +8,23 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".tif", ".tiff
               ".avif", ".bmp", ".gif", ".ico"}
 PDF_EXTS = {".pdf"}
 DOCX_EXTS = {".docx"}
-TEXT_EXTS = {".txt", ".md", ".markdown", ".csv", ".tsv", ".tab", ".psv", ".log",
+TEXT_EXTS = {".txt", ".md", ".markdown", ".log",
              ".json", ".jsonc", ".xml", ".xsl", ".xsd", ".svg", ".plist", ".config",
              ".iml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
-             ".properties", ".srt", ".vtt", ".ics", ".html", ".htm",
-             ".rst", ".tex", ".org", ".textile", ".adoc",
+             ".properties", ".rst", ".tex", ".org", ".textile", ".adoc",
              ".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
              ".java", ".c", ".h", ".hpp", ".cpp", ".cc", ".cs",
              ".go", ".rs", ".php", ".rb", ".swift", ".kt", ".kts",
              ".scala", ".lua", ".pl", ".r", ".jl", ".dart",
              ".vue", ".svelte", ".sh", ".bash", ".zsh", ".ps1",
              ".bat", ".cmd", ".sql", ".css", ".scss", ".less",
-             ".gradle", ".cmake", ".htaccess"}
+             ".gradle", ".cmake", ".htaccess", ".html", ".htm"}
+SUBTITLE_EXTS = {".srt", ".vtt", ".ass", ".ssa", ".lrc"}
+NOTEBOOK_EXTS = {".ipynb"}
+EMAIL_EXTS = {".eml", ".emlx"}
+CONTACT_EXTS = {".vcf", ".vcard", ".ics"}
+FONT_EXTS = {".ttf", ".otf", ".woff", ".woff2", ".eot"}
+CSV_EXTS = {".csv", ".tsv", ".tab", ".psv"}
 AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".oga", ".opus", ".flac", ".m4a", ".aac",
               ".wma", ".aiff", ".aif"}
 VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".mkv", ".webm", ".avi", ".mpg", ".mpeg",
@@ -69,6 +74,18 @@ def category(path: str | Path) -> str | None:
         return "video"
     if ext in SHEET_EXTS:
         return "sheet"
+    if ext in CSV_EXTS:
+        return "sheet"
+    if ext in SUBTITLE_EXTS:
+        return "subtitle"
+    if ext in NOTEBOOK_EXTS:
+        return "notebook"
+    if ext in EMAIL_EXTS:
+        return "email"
+    if ext in CONTACT_EXTS:
+        return "contact"
+    if ext in FONT_EXTS:
+        return "font"
     if ext in PRESENT_EXTS:
         return "presentation"
     if ext in EBOOK_EXTS:

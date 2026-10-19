@@ -199,3 +199,96 @@ def playlist_m3u(srcs: list[str | Path]) -> Path:
     out.write_text("#EXTM3U\n" + "\n".join(str(Path(s).name) for s in sorted(srcs)) + "\n",
                    encoding="utf-8")
     return out
+
+
+def find_duplicates(srcs: list[str | Path]) -> Path:
+    """Exact (SHA-256) + perceptual (dHash ≤6) duplicate report → HTML."""
+    import hashlib
+    from .convert import open_image
+    from PIL import Image
+    from .util import UserError
+
+    def dh(p: Path) -> str | None:
+        try:
+            im = open_image(p).convert("L").resize((9, 8), Image.LANCZOS)
+            px = list(im.getdata())
+            bits = "".join("1" if px[y * 9 + x] > px[y * 9 + x + 1] else "0"
+                           for y in range(8) for x in range(8))
+            return f"{int(bits, 2):016x}"
+        except Exception:
+            return None
+
+    files = [Path(s) for s in srcs if Path(s).is_file()]
+    if len(files) < 2:
+        raise UserError("Drop at least 2 files to find duplicates.")
+    hashes: dict[str, list[str]] = {}
+    for p in files:
+        h = hashlib.sha256()
+        try:
+            with open(p, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+            hashes.setdefault(h.hexdigest(), []).append(str(p))
+        except OSError:
+            pass
+    exact = [g for g in hashes.values() if len(g) > 1]
+    imgs = [p for p in files if p.suffix.lower() in
+            (".png", ".jpg", ".jpeg", ".webp", ".bmp")]
+    visual: list[list[str]] = []
+    for p in imgs:
+        d = dh(p)
+        if not d:
+            continue
+        hit = next((g for g in visual if any(
+            bin(int(d, 16) ^ int(q.split("|")[0], 16)).count("1") <= 6 for q in g)), None)
+        if hit is not None:
+            hit.append(f"{d}|{p}")
+        else:
+            visual.append([f"{d}|{p}"])
+    visual = [[q.split("|", 1)[1] for q in g] for g in visual if len(g) > 1]
+    import html as _h
+    rows = "".join(f"<h2>Exact ×{len(g)}</h2><ul>{''.join(f'<li>{_h.escape(x)}</li>' for x in g)}</ul>"
+                   for g in exact)
+    rows += "".join(f"<h2>Look-alike ×{len(g)}</h2><ul>{''.join(f'<li>{_h.escape(x)}</li>' for x in g)}</ul>"
+                    for g in visual)
+    out = sibling(files[0], "Duplicates", ".html")
+    out.write_text(f"<!doctype html><html><head><meta charset='utf-8'></head><body>"
+                   f"<h1>Duplicates ({len(files)} files)</h1>{rows or '<p>No duplicates found.</p>'}"
+                   f"</body></html>", encoding="utf-8")
+    return out
+
+
+def folder_report(folder: str | Path) -> Path:
+    """Folder stats → local HTML (types, MB, top-N)."""
+    from collections import Counter
+    from .util import UserError
+    root = Path(folder)
+    if not root.is_dir():
+        raise UserError("Drop a folder for a folder report.")
+    files = [p for p in root.rglob("*") if p.is_file()][:20000]
+    if not files:
+        raise UserError("Folder is empty.")
+    exts: Counter = Counter()
+    total = 0
+    biggest: list[tuple[int, Path]] = []
+    for p in files:
+        try:
+            n = p.stat().st_size
+        except OSError:
+            continue
+        total += n
+        exts[p.suffix.lower() or "(none)"] += 1
+        biggest.append((n, p))
+    biggest.sort(reverse=True)
+    from .util import human_size
+    import html as _h
+    top = "".join(f"<li>{human_size(n)} — {_h.escape(str(p))}</li>" for n, p in biggest[:15])
+    kinds = "".join(f"<li>{_h.escape(k)}: {v}</li>" for k, v in exts.most_common(15))
+    out = unique_path(root / "DragShift folder report.html")
+    out.write_text(
+        f"<!doctype html><html><head><meta charset='utf-8'><style>"
+        f"body{{font-family:sans-serif;margin:2em}}li{{margin:2px 0}}</style></head><body>"
+        f"<h1>{_h.escape(root.name)} — {len(files)} files, {human_size(total)}</h1>"
+        f"<h2>By type</h2><ul>{kinds}</ul><h2>Biggest</h2><ol>{top}</ol></body></html>",
+        encoding="utf-8")
+    return out

@@ -16,6 +16,7 @@ imageio-ffmpeg>=0.5.1
 mutagen>=1.47.0
 qrcode[pil]>=7.4
 cryptography>=42.0
+fontTools>=4.50
 pywin32>=306; sys_platform == "win32"
 pyobjc-framework-Cocoa>=10; sys_platform == "darwin"
 pyobjc-framework-Quartz>=10; sys_platform == "darwin"

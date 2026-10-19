@@ -25,13 +25,18 @@ except ImportError:  # pragma: no cover
 
 IMAGE_TARGETS = ["PNG", "JPG", "WEBP", "HEIC", "TIFF", "AVIF", "BMP", "PDF", "ICO", "GIF"]
 PDF_TARGETS = ["JPG", "PNG", "DOCX", "TXT"]
-DOCX_TARGETS = ["PDF", "TXT"]
+DOCX_TARGETS = ["PDF", "TXT", "HTML"]
 TEXT_TARGETS = ["PDF", "DOCX", "TXT", "HTML"]
 AUDIO_TARGETS = ["MP3", "WAV", "OGG", "OPUS", "FLAC", "M4A"]
 VIDEO_TARGETS = ["MP4", "WEBM", "MKV", "MP3", "WAV", "GIF", "PNG"]
 SHEET_TARGETS = ["CSV", "XLSX", "HTML", "PDF", "TXT"]
 PRESENT_TARGETS = ["PDF", "TXT", "HTML"]
 EBOOK_TARGETS = ["TXT", "HTML", "PDF", "DOCX"]
+SUBTITLE_TARGETS = ["SRT", "VTT", "TXT"]
+NOTEBOOK_TARGETS = ["PY", "HTML", "TXT", "PDF"]
+EMAIL_TARGETS = ["TXT", "HTML", "PDF"]
+CONTACT_TARGETS = ["CSV", "TXT", "HTML"]
+FONT_TARGETS = ["PNG", "PDF", "TXT"]
 
 PIL_FORMAT = {"PNG": "PNG", "JPG": "JPEG", "WEBP": "WEBP", "HEIC": "HEIF", "TIFF": "TIFF",
               "AVIF": "AVIF", "BMP": "BMP", "PDF": "PDF", "ICO": "ICO", "GIF": "GIF"}
@@ -361,6 +366,9 @@ def text_to_docx(src: str | Path) -> list[Path]:
 
 def text_to_txt(src: str | Path) -> list[Path]:
     """Normalised UTF-8 + LF copy (handy for .env / .gitignore / CRLF sources)."""
+    if Path(src).suffix.lower() in (".html", ".htm"):
+        from . import texttools
+        return [texttools.html_to_txt(src)]
     text = read_text(src).replace("\r\n", "\n").replace("\r", "\n")
     if Path(src).suffix.lower() == ".txt":
         out = sibling(src, "Normalized", ".txt")
@@ -371,14 +379,55 @@ def text_to_txt(src: str | Path) -> list[Path]:
 
 
 def text_to_html(src: str | Path) -> list[Path]:
-    """Standalone HTML with the source in a <pre> block."""
+    """Standalone HTML. Markdown gets headings/bold/code/lists; rest goes in <pre>."""
     out = sibling(src, ext=".html")
-    body = (f"<!doctype html>\n<html><head><meta charset=\"utf-8\">\n"
-            f"<title>{html.escape(Path(src).name)}</title>\n"
-            f"<style>body{{font-family:sans-serif;margin:2em}}"
-            f"pre{{font-family:monospace;font-size:10.5pt;white-space:pre-wrap}}</style>\n"
-            f"</head><body><pre>{html.escape(read_text(src))}</pre></body></html>\n")
-    out.write_text(body, encoding="utf-8", newline="\n")
+    raw = read_text(src)
+    if Path(src).suffix.lower() in (".md", ".markdown"):
+        import re as _re
+        body = []
+        in_list, in_code = False, False
+        for ln in raw.split("\n"):
+            s = ln.rstrip()
+            if s.strip().startswith("```"):
+                body.append("</pre>" if in_code else "<pre>")
+                in_code = not in_code
+                continue
+            if in_code:
+                body.append(html.escape(s))
+                continue
+            m = _re.match(r"^(#{1,6})\s+(.*)", s)
+            if m:
+                lvl = len(m.group(1))
+                body.append(f"<h{lvl}>{html.escape(m.group(2))}</h{lvl}>")
+                continue
+            if _re.match(r"^(\*|-)\s+", s):
+                if not in_list:
+                    body.append("<ul>")
+                    in_list = True
+                body.append(f"<li>{html.escape(_re.sub(r'^(\*|-)\s+', '', s))}</li>")
+                continue
+            if in_list:
+                body.append("</ul>")
+                in_list = False
+            if not s.strip():
+                body.append("")
+                continue
+            s = html.escape(s)
+            s = _re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+            s = _re.sub(r"`(.+?)`", r"<code>\1</code>", s)
+            body.append(f"<p>{s}</p>")
+        if in_list:
+            body.append("</ul>")
+        inner = "\n".join(body)
+    else:
+        inner = f"<pre>{html.escape(raw)}</pre>"
+    out.write_text(f"<!doctype html>\n<html><head><meta charset=\"utf-8\">\n"
+                   f"<title>{html.escape(Path(src).name)}</title>\n"
+                   f"<style>body{{font-family:sans-serif;margin:2em;max-width:60em}}"
+                   f"pre{{background:#f4f4f4;padding:1em;white-space:pre-wrap}}"
+                   f"code{{background:#f4f4f4}}</style>\n"
+                   f"</head><body>{inner}</body></html>\n",
+                   encoding="utf-8", newline="\n")
     return [out]
 
 
@@ -413,9 +462,19 @@ def targets_for(cat: str, src_ext: str) -> list[str]:
         return t
     table = {"pdf": PDF_TARGETS, "docx": DOCX_TARGETS, "text": TEXT_TARGETS,
              "audio": AUDIO_TARGETS, "video": VIDEO_TARGETS, "sheet": SHEET_TARGETS,
-             "presentation": PRESENT_TARGETS, "ebook": EBOOK_TARGETS}
-    t = table.get(cat, [])
-    return [x for x in t if x != cur]
+             "presentation": PRESENT_TARGETS, "ebook": EBOOK_TARGETS,
+             "subtitle": SUBTITLE_TARGETS, "notebook": NOTEBOOK_TARGETS,
+             "email": EMAIL_TARGETS, "contact": CONTACT_TARGETS, "font": FONT_TARGETS}
+    t = [x for x in table.get(cat, []) if x != cur]
+    if cat == "text":
+        low = src_ext
+        if low in ("json", "jsonc"):
+            t += [x for x in ("YAML",) if x != cur]
+        elif low in ("yaml", "yml"):
+            t += [x for x in ("JSON", "TOML") if x != cur]
+        elif low == "toml":
+            t += [x for x in ("JSON",) if x != cur]
+    return t
 
 
 def convert(src: str | Path, cat: str, target: str) -> list[Path]:
@@ -430,7 +489,16 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
         if target == "DOCX":
             return pdf_to_docx(src)
     if cat == "docx":
-        return docx_to_pdf(src) if target == "PDF" else docx_to_txt(src)
+        if target == "PDF":
+            return docx_to_pdf(src)
+        if target == "TXT":
+            return docx_to_txt(src)
+        if target == "HTML":
+            out = sibling(src, ext=".html")
+            out.write_text(f"<!doctype html>\n<html><head><meta charset='utf-8'>\n"
+                           f"<style>{CSS}</style></head><body>{docx_to_html(src)}</body></html>",
+                           encoding="utf-8")
+            return [out]
     if cat == "text":
         if target == "PDF":
             return text_to_pdf(src)
@@ -440,6 +508,15 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
             return text_to_txt(src)
         if target == "HTML":
             return text_to_html(src)
+        if target == "YAML":
+            from . import texttools
+            return texttools.json_to_yaml(src)
+        if target == "JSON":
+            from . import sheettools
+            return [sheettools.yaml_to_json(src)[0]]
+        if target == "TOML":
+            from . import sheettools
+            return sheettools.yaml_to_toml(src)
     if cat == "audio":
         from . import mediatools
         return mediatools.audio_to(src, target)
@@ -492,4 +569,44 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
             out = sibling(src, ext=".docx")
             d.save(out)
             return [out]
+    if cat == "subtitle":
+        from . import texttools
+        if target in ("SRT", "VTT"):
+            return texttools.subtitles_convert(src, target)
+        if target == "TXT":
+            return [texttools.subtitles_to_txt(src)]
+    if cat == "notebook":
+        from . import nbtools
+        if target == "PY":
+            return nbtools.ipynb_to_py(src)
+        if target == "TXT":
+            return nbtools.ipynb_to_txt(src)
+        if target == "HTML":
+            return nbtools.ipynb_to_html(src)
+        if target == "PDF":
+            return nbtools.ipynb_to_pdf(src)
+    if cat == "email":
+        from . import nbtools
+        if target == "TXT":
+            return nbtools.eml_to_txt(src)
+        if target == "HTML":
+            return nbtools.eml_to_html(src)
+        if target == "PDF":
+            return nbtools.eml_to_pdf(src)
+    if cat == "contact":
+        from . import nbtools
+        if target == "CSV":
+            return nbtools.contact_to_csv(src)
+        if target == "TXT":
+            return nbtools.contact_to_txt(src)
+        if target == "HTML":
+            return nbtools.contact_to_html(src)
+    if cat == "font":
+        from . import nbtools
+        if target == "TXT":
+            return nbtools.font_info(src)
+        if target == "PNG":
+            return nbtools.font_specimen(src, "PNG")
+        if target == "PDF":
+            return nbtools.font_specimen(src, "PDF")
     raise ValueError(f"Can't convert {cat} to {target}")
