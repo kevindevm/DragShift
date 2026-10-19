@@ -448,6 +448,16 @@ class EnginesWindow(GlassWindow):
                 QMessageBox.warning(self, "LibreOffice", _tr("No encontré soffice ahí."))
 
     def _install_lo(self, btn):
+        from .i18n import tr as _trb
+        import sys as _sys
+        if _sys.platform != "win32":
+            from PySide6.QtWidgets import QMessageBox as _MB
+            _MB.information(self, "LibreOffice",
+                            _trb("Automatic install is Windows-only. Install LibreOffice with your package manager, then use Ya lo tengo…"))
+            from PySide6.QtGui import QDesktopServices as _QDT
+            from PySide6.QtCore import QUrl as _QUrl
+            _QDT.openUrl(_QUrl("https://www.libreoffice.org/download/download-libreoffice/"))
+            return
         from PySide6.QtCore import QObject, QThread, Signal
 
         class _Worker(QObject):

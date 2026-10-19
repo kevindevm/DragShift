@@ -199,9 +199,12 @@ def libreoffice_latest() -> tuple[str, str]:
 def libreoffice_install(progress=None) -> Path:
     """Download the MSI + administrative install (msiexec /a, no admin, no registry).
 
+    Windows-only; other platforms raise with package-manager guidance.
     ~400 MB download, ~1.3 GB on disk. Raises UserError on any failure.
     """
     from .util import UserError
+    if sys.platform != "win32":
+        raise UserError("Automatic LibreOffice install is Windows-only. On macOS/Linux install it with your package manager (brew, apt, dnf), then it is detected automatically.")
     import subprocess
     import tempfile
     import urllib.request

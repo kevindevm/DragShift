@@ -240,6 +240,42 @@ def test_lo_discovery_and_engines():
     import re
     vers = re.findall(r'href="(\d+\.\d+\.\d+)/"', html)
     assert sorted(vers, key=lambda v: tuple(int(x) for x in v.split(".")))[-1] == "25.2.3"
+    # platform tags used for wheel downloads (mac-arm, linux, win)
+    import sys as _sys
+    assert engines._plat_tags()  # current platform non-empty
+    # LO auto-install is Windows-only
+    import pytest as _pt
+    from dragshift.util import UserError
+    if _sys.platform != "win32":
+        with _pt.raises(UserError):
+            engines.libreoffice_install()
+    # wheel picking from fake PyPI metadata (no network)
+    import json as _json
+
+    class _Resp:
+        def __init__(self, payload):
+            self._p = payload
+        def read(self):
+            return _json.dumps(self._p).encode()
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    meta = {"urls": [
+        {"filename": "onnxruntime-1.31.0-cp312-cp312-win_amd64.whl", "size": 1,
+         "url": "https://x/onnxruntime-1.31.0-cp312-cp312-win_amd64.whl", "sha256": "x"},
+        {"filename": "onnxruntime-1.31.0-cp312-cp312-macosx_11_0_arm64.whl", "size": 1,
+         "url": "https://x/onnxruntime-1.31.0-cp312-cp312-macosx_11_0_arm64.whl", "sha256": "x"},
+    ]}
+    import urllib.request as _u
+    real = _u.urlopen
+    _u.urlopen = lambda *a, **k: _Resp(meta)
+    try:
+        picked = [u for u in meta["urls"] if "win_amd64" in u["filename"]]
+        assert picked and picked[0]["filename"].startswith("onnxruntime-1.31.0")
+    finally:
+        _u.urlopen = real
 
 
 def test_ring_order_stable_for_e2e(tmp_path):
