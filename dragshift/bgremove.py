@@ -35,6 +35,10 @@ def ai_model_present() -> bool:
     return (models_dir() / MODEL_NAME).exists()
 
 
+def ai_ready() -> bool:
+    return ai_status()[0] == "ready"
+
+
 def onnx_available() -> bool:
     try:
         import onnxruntime  # noqa: F401
@@ -51,8 +55,20 @@ def rembg_available() -> bool:
         return False
 
 
-def ai_ready() -> bool:
-    return ai_model_present() and onnx_available()
+def ai_status() -> tuple[str, str]:
+    """(state, human message). States: ready / no-model / no-onnx / frozen-no-onnx."""
+    has_model = ai_model_present()
+    has_onnx = onnx_available()
+    if has_model and has_onnx:
+        return "ready", "AI ready (model downloaded)"
+    if not has_onnx:
+        if getattr(sys, "frozen", False):
+            return ("frozen-no-onnx",
+                    "Not available in portable .exe (can't install onnxruntime inside it). "
+                    "Use the Python version or Solid background.")
+        return ("no-onnx",
+                "Needs onnxruntime (auto-installs on first AI use) + model download (~176 MB, once)")
+    return "no-model", "Model not downloaded yet (downloads ~176 MB on first AI use)"
 
 
 def ensure_onnxruntime() -> None:

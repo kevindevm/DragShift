@@ -194,7 +194,13 @@ class SettingsWindow(GlassWindow):
         r += 1
 
         grid.addWidget(QLabel("Background removal"), r, 0)
-        self.bgm = combo([("solid", "Solid (instant)"), ("ai", "AI u2net (downloads ~176 MB once)")],
+        try:
+            from . import bgremove as _bg
+            _st, _msg = _bg.ai_status()
+            _ai_label = f"AI u2net ({'ready ✓' if _st == 'ready' else 'needs download'})"
+        except Exception:
+            _ai_label = "AI u2net (downloads ~176 MB once)"
+        self.bgm = combo([("solid", "Solid (instant)"), ("ai", _ai_label)],
                          self.s.get("bg_mode"))
         self.bgm.currentIndexChanged.connect(lambda _: self._save("bg_mode", self.bgm.currentData()))
         grid.addWidget(self.bgm, r, 1)

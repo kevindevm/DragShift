@@ -218,3 +218,14 @@ def test_v5_conversions(tmp_path):
     t = tmp_path / "q.txt"
     t.write_text("hello")
     assert filetools.qr_with_logo(t, im2).suffix == ".png"
+
+
+def test_presets_and_ai_status():
+    from dragshift.app import presets_for
+    assert presets_for("image") == ["web-small"]
+    assert presets_for("audio") == ["voice-note"]
+    assert presets_for("video") == ["voice-note"]
+    assert presets_for("pdf") == []
+    from dragshift import bgremove
+    state, msg = bgremove.ai_status()
+    assert state in ("ready", "no-model", "no-onnx", "frozen-no-onnx") and msg

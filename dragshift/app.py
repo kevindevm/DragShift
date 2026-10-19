@@ -79,9 +79,13 @@ EMAIL_TOOLS = ["Attach"]
 CONTACT_TOOLS = ["Merge"]
 FONT_TOOLS = ["Specimen"]
 PRESETS = {
-    "web-small": {"tool": "Compress", "q": 70, "side": 1920, "fmt": "JPG", "strip": True},
-    "voice-note": {"tool": "Voice"},
+    "web-small": {"tool": "Compress", "cats": ("image",), "q": 70, "side": 1920, "fmt": "JPG", "strip": True},
+    "voice-note": {"tool": "Voice", "cats": ("audio", "video")},
 }
+
+
+def presets_for(cat: str | None) -> list[str]:
+    return [n for n, p in PRESETS.items() if cat in p.get("cats", ())]
 
 
 def text_tools_for(path: str) -> list[str]:
@@ -354,8 +358,9 @@ class DragShiftApp(QObject):
             rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Specimen sheet"))
                               for n in FONT_TOOLS]
         # presets ring for images/audio
-        if cat in ("image", "audio") and PRESETS:
-            rings["Presets"] = [Item(n, "★", key=f"preset:{n}", hint="One-click preset") for n in PRESETS]
+        for _pn in presets_for(cat):
+            rings.setdefault("Presets", []).append(
+                Item(_pn, "★", key=f"preset:{_pn}", hint="One-click preset"))
         # multi-file extras live on a second ring regardless of cat
         extras: list[Item] = []
         if len(paths) > 1 and len(same) == len(paths):
@@ -409,6 +414,9 @@ class DragShiftApp(QObject):
             pass
         if kind == "preset":
             p = PRESETS.get(name, {})
+            if cat not in p.get("cats", ()):
+                self.toasts.error(f"Preset {name}", f"Not for {cat or '?'} files.")
+                return
             if p.get("tool") == "Compress":
                 self.submit(f"preset:{name}", paths,
                             lambda: [imaging.compress_to(x, p["q"], p["side"], p["fmt"]) for p in paths],
@@ -649,6 +657,15 @@ class DragShiftApp(QObject):
                 from .util import CONFIG
                 mode = str(CONFIG.get("bg_mode", "solid"))
                 if mode == "ai":
+                    state, msg = bgremove.ai_status()
+                    if state != "ready":
+                        if state == "no-model":
+                            self.toasts.info("AI background",
+                                             "Downloading model (~176 MB, once)… watch the timer.")
+                        else:
+                            self.toasts.error("AI background", msg)
+                            if state != "no-model":
+                                return
                     self.submit("tool:Remove BG", paths,
                                 lambda: [bgremove.remove_ai_background(p) for p in paths],
                                 "AI cutout…")
