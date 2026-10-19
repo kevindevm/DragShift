@@ -51,6 +51,10 @@ def _soffice() -> Path | None:
     found = _which(["soffice", "libreoffice"])
     if found:
         return found
+    eng = engines_root() / "libreoffice"
+    if eng.exists():
+        for cand in list(eng.rglob("soffice.exe")) + list(eng.rglob("soffice")):
+            return cand
     for cand in (r"C:\Program Files\LibreOffice\program\soffice.exe",
                  r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
                  "/Applications/LibreOffice.app/Contents/MacOS/soffice",
@@ -150,6 +154,88 @@ def libreoffice_pdf(src: str | Path, out_dir: str | Path | None = None) -> Path:
         out = sibling(src, ext=".pdf")
         out.write_bytes(pdfs[0].read_bytes())
         return out
+
+
+LO_STABLE = "https://download.documentfoundation.org/libreoffice/stable/"
+
+
+def libreoffice_latest() -> tuple[str, str]:
+    """(version, msi_url) auto-detected from the stable directory. Raises UserError."""
+    from .util import UserError
+    import re
+    import urllib.request
+
+    def _get(url: str) -> str:
+        req = urllib.request.Request(url, headers={"User-Agent": "DragShift"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read().decode("utf-8", "replace")
+
+    try:
+        html = _get(LO_STABLE)
+    except Exception as e:
+        raise UserError(f"Couldn't reach LibreOffice downloads: {e}")
+    vers = re.findall(r'href="(\d+\.\d+\.\d+)/"', html)
+    if not vers:
+        raise UserError("Couldn't list LibreOffice versions.")
+    ver = sorted(vers, key=lambda v: tuple(int(x) for x in v.split(".")))[-1]
+    try:
+        sub = _get(f"{LO_STABLE}{ver}/win/x86_64/")
+    except Exception as e:
+        raise UserError(f"Couldn't list LibreOffice {ver} files: {e}")
+    msis = re.findall(r'href="(LibreOffice_[\d.]+_Win_x64\.msi)"', sub)
+    if not msis:
+        # language packs layout / archive naming fallback
+        msis = re.findall(r'href="((?:LibreOffice|LibO)[^"]*_Win_x64\.msi)"', sub)
+    if not msis:
+        raise UserError(f"No Windows MSI found for LibreOffice {ver}.")
+    return ver, f"{LO_STABLE}{ver}/win/x86_64/{msis[0]}"
+
+
+def libreoffice_install(progress=None) -> Path:
+    """Download the MSI + administrative install (msiexec /a, no admin, no registry).
+
+    ~400 MB download, ~1.3 GB on disk. Raises UserError on any failure.
+    """
+    from .util import UserError
+    import subprocess
+    import tempfile
+    import urllib.request
+    have = _soffice()
+    if have and str(have).startswith(str(engines_root())):
+        return have
+    ver, url = libreoffice_latest()
+    dest = engines_root() / "libreoffice"
+    tmp = Path(tempfile.mkdtemp()) / f"libreoffice-{ver}.msi"
+
+    def _hook(block, size, total):
+        if progress and total > 0:
+            try:
+                progress(min(99, int(block * size * 100 / total)))
+            except Exception:
+                pass
+
+    try:
+        urllib.request.urlretrieve(url, tmp, reporthook=_hook)
+    except Exception as e:
+        raise UserError(f"Couldn't download LibreOffice {ver}: {e}")
+    target = dest / ver.replace(".", "_")
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        r = subprocess.run(["msiexec", "/a", str(tmp), f"TARGETDIR={target}", "/qn"],
+                           capture_output=True, timeout=1800)
+    except Exception as e:
+        raise UserError(f"msiexec failed: {e}")
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    if r.returncode != 0:
+        raise UserError(f"LibreOffice install failed (msiexec code {r.returncode}).")
+    so = _soffice()
+    if not so:
+        raise UserError("Installed, but soffice.exe not found. Report this as a bug.")
+    return so
 
 
 # ---------------------------------------------------------------- vendored wheels

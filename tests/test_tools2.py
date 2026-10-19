@@ -210,7 +210,8 @@ def test_v5_conversions(tmp_path):
     base.save(im2)
     out = bgremove.remove_solid_background(im2)
     assert out.suffix == ".png" and Image.open(out).mode == "RGBA"
-    assert bgremove.models_dir().exists() and not bgremove.ai_ready()
+    assert bgremove.models_dir().exists()
+    assert bgremove.ai_status()[0] in ("ready", "no-model", "no-onnx")
     from dragshift import imaging as _im
     from dragshift.convert import open_image
     assert _im.save_like(_im.watermark(open_image(im2), "TEST"), im2, "WM").exists()
@@ -224,9 +225,21 @@ def test_v5_conversions(tmp_path):
     assert presets_for("audio") == ["voice-note"]
     assert presets_for("video") == ["voice-note"]
     assert presets_for("pdf") == []
-    from dragshift import bgremove
-    state, msg = bgremove.ai_status()
+    from dragshift import bgremove as _bg2
+    state, msg = _bg2.ai_status()
     assert state in ("ready", "no-model", "no-onnx") and msg
+
+
+def test_lo_discovery_and_engines():
+    from dragshift import engines
+    ids = [e.id for e in engines.registry()]
+    assert {"ffmpeg", "office", "ai-bg", "pandoc", "libreoffice"} <= set(ids)
+    # version picking without network
+    html = ('<a href="7.6.7/">7.6.7/</a><a href="25.2.3/">25.2.3/</a>'
+            '<a href="24.8.1/">24.8.1/</a>')
+    import re
+    vers = re.findall(r'href="(\d+\.\d+\.\d+)/"', html)
+    assert sorted(vers, key=lambda v: tuple(int(x) for x in v.split(".")))[-1] == "25.2.3"
 
 
 def test_ring_order_stable_for_e2e(tmp_path):

@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QSlider, QVBoxLayout)
 
@@ -285,7 +285,6 @@ class SettingsWindow(GlassWindow):
 
 class EnginesWindow(GlassWindow):
     """Opcionales: estado e instalación de motores descargables (estilo Filee)."""
-
     def __init__(self):
         super().__init__("Motores opcionales", size=(620, 460))
         from . import engines as _eng
@@ -320,12 +319,12 @@ class EnginesWindow(GlassWindow):
                 b.clicked.connect(lambda _=False, b=b: self._install_ai(b))
                 row.addWidget(b)
             elif e.id == "libreoffice":
-                b = QPushButton("Elegir carpeta…")
-                b.clicked.connect(self._locate_lo)
+                b = QPushButton("Descargar e instalar (~400 MB)")
+                b.clicked.connect(lambda _=False, b=b: self._install_lo(b))
                 row.addWidget(b)
-                b2 = QPushButton("Descargar LibreOffice…")
-                b2.clicked.connect(self._get_lo)
-                row.addWidget(b2)
+                b3 = QPushButton("Ya lo tengo…")
+                b3.clicked.connect(self._locate_lo)
+                row.addWidget(b3)
             row.addStretch(1)
             if e.id in ("pandoc", "ai-bg", "libreoffice"):
                 grid.addLayout(row, r, 0, 1, 2)
@@ -398,6 +397,46 @@ class EnginesWindow(GlassWindow):
                 QMessageBox.information(self, "LibreOffice", f"Detectado: {cand}\nYa puedes usar Convert → PDF en DOC/XLS/PPT.")
             else:
                 QMessageBox.warning(self, "LibreOffice", "No encontré soffice ahí.")
+
+    def _install_lo(self, btn):
+        from PySide6.QtCore import QObject, QThread, Signal
+
+        class _Worker(QObject):
+            done = Signal(object)
+            prog = Signal(int)
+
+            def run(self):
+                try:
+                    from . import engines as _eng
+                    _eng.libreoffice_install(progress=lambda p: self.prog.emit(int(p)))
+                    self.done.emit(None)
+                except Exception as e:  # noqa: BLE001
+                    self.done.emit(e)
+
+        btn.setEnabled(False)
+        btn.setText("Descargando MSI…")
+        self._lo_thread = QThread(self)
+        self._lo_worker = _Worker()
+        self._lo_worker.moveToThread(self._lo_thread)
+        self._lo_thread.started.connect(self._lo_worker.run)
+        self._lo_worker.prog.connect(lambda p: btn.setText(f"Descargando… {p}%"))
+        self._lo_worker.done.connect(lambda e: self._lo_done(btn, e))
+        self._lo_thread.start()
+
+    def _lo_done(self, btn, err):
+        try:
+            self._lo_thread.quit()
+            self._lo_thread.wait()
+        except Exception:
+            pass
+        from PySide6.QtWidgets import QMessageBox
+        if err is None:
+            btn.setText("Instalado ✓ (reinicia)")
+            QMessageBox.information(self, "LibreOffice", "Listo. Ya puedes usar Convert → PDF en DOC/XLS/PPT/ODT.")
+        else:
+            btn.setText("Reintentar")
+            btn.setEnabled(True)
+            QMessageBox.warning(self, "LibreOffice", str(err))
 
     def _get_lo(self):
         from PySide6.QtGui import QDesktopServices
