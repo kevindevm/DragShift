@@ -208,8 +208,9 @@ class RadialMenu(QWidget):
         elif early:
             self._load(early)           # slices show at once; drop still comes via dragEnter
         else:
+            from .i18n import tr
             self.paths, self.rings, self.ring_names = [], {}, []
-            self.hub_text = "Drop here"
+            self.hub_text = tr("Drop here")
             for n in (4, 7):  # most common rings: render speculatively
                 self._render(n)
         self._t = 0.0

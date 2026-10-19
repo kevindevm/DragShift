@@ -302,6 +302,23 @@ def test_ring_order_stable_for_e2e(tmp_path):
     assert [i.label for i in r1["Tools"]] == [i.label for i in r2["Tools"]]
 
 
+def test_opcionales_opens_and_stays():
+    """Regression: EnginesWindow was GC'd instantly (local var). Must stay open."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from dragshift.settings import Settings, SettingsWindow
+    app = QApplication.instance() or QApplication([])
+    w = SettingsWindow(Settings())
+    w._open_engines()
+    win = w._engines_win
+    assert win is not None and win.isVisible()
+    w._open_engines()
+    assert w._engines_win is win  # reused, not duplicated
+    win.close()
+    w.close()
+
+
 def test_filee_batch(tmp_path):
     from dragshift import archtools, engines, nbtools, updater
     from dragshift.util import category

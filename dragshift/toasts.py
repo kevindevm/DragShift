@@ -329,8 +329,9 @@ class ToastCard(QWidget):
         # action buttons
         self.buttons = []
         if self.state == "done" and self.result and self.result.outs:
+            from .i18n import tr as _tr
             names = ["Open", "Show", "Undo"]
-            labels = {"Open": "Open", "Show": "Show in folder", "Undo": "Undo"}
+            labels = {"Open": _tr("Open"), "Show": _tr("Show in folder"), "Undo": _tr("Undo")}
             f.setPixelSize(12)
             f.setBold(True)
             p.setFont(f)

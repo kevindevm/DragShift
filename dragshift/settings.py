@@ -329,17 +329,17 @@ class EnginesWindow(GlassWindow):
                 state, detail = "missing", ""
             name = QLabel(f"<b>{e.name}</b> <i>({e.kind}, {e.size})</i>")
             name.setWordWrap(True)
-            grid.addWidget(grid.addWidget(name, r, 0) or name, r, 0) if False else grid.addWidget(name, r, 0)
+            grid.addWidget(name, r, 0)
             from .i18n import tr as _tr
             st = QLabel(_tr("✓ listo") if state == "ready" else _tr("○ no instalado"))
             st.setObjectName("dim" if state != "ready" else "good")
             grid.addWidget(st, r, 1)
-            self._rows[e.id] = (st, info)
             r += 1
             info = QLabel((e.desc + " " + (detail or e.note or "")).strip())
             info.setObjectName("dim")
             info.setWordWrap(True)
             grid.addWidget(info, r, 0, 1, 2)
+            self._rows[e.id] = (st, info)
             r += 1
             row = QHBoxLayout()
             from .i18n import tr as _tr2
@@ -517,8 +517,8 @@ class WelcomeWindow(GlassWindow):
         super().__init__(tr("Welcome to DragShift"), size=(560, 430))
         self.s = settings
         steps = [
-            ("1", tr("Start dragging any file"), "in Finder or on the desktop" if IS_MAC else
-             "in your file manager (Thunar, Nautilus…)" if IS_LINUX else "in File Explorer or on the desktop"),
+            ("1", tr("Start dragging any file"), tr("in Finder or on the desktop") if IS_MAC else
+             tr("in your file manager (Thunar, Nautilus…)") if IS_LINUX else tr("in File Explorer or on the desktop")),
             ("2", f"{tr('Press')} {trigger_label}", tr("the glass menu opens right under your cursor")),
             ("3", tr("Drop it on a slice"), tr("the result is saved next to the original")),
             ("⇄", f"{tr('Tap')} {trigger_label} {tr('again')}", tr("to switch between Convert and Tools")),
