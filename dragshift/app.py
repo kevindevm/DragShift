@@ -36,6 +36,8 @@ GLYPHS = {"Compress": "⇲", "Metadata": "ⓘ", "Redact": "▮", "Crop": "⌗", 
           "Voice": "🎙", "Sample": "✂", "CleanTags": "🧹", "Mute": "🔇",
           "ZIP": "📦", "Hash": "#", "B64": "64", "QR": "▦", "SplitFile": "◫",
           "Join": "⛓", "Subs": "💬", "Loud": "🔊", "Trim": "✂",
+          "Remove BG": "🪄", "Watermark": "©", "Favicon": "🌐", "VisualDiff": "🔍",
+          "Storyboard": "🎬",
           "Contact": "⊞", "GIF": "🎞", "Playlist": "🎵", "Diff": "↔", "Portfolio": "📕"}
 
 HINTS = {
@@ -50,6 +52,8 @@ HINTS = {
     "Voice": "Tiny mono MP3", "Sample": "First 30s MP3", "CleanTags": "Remove metadata",
     "Mute": "Remove audio track", "Join": "Join same format", "Subs": "Extract subtitles",
     "Loud": "Normalize loudness", "Trim": "Cut start→end",
+    "Remove BG": "Solid or AI cutout", "Watermark": "Text overlay", "Favicon": "Icon pack",
+    "VisualDiff": "Image A↔B diff", "Storyboard": "Filmstrip JPG",
     "ZIP": "Bundle into .zip", "Hash": "SHA-256 sidecar", "B64": "Base64 encode",
     "QR": "QR code PNG", "SplitFile": "Split 10 MB parts",
     "Contact": "Contact sheet", "GIF": "Animated GIF", "Playlist": ".m3u list",
@@ -64,7 +68,8 @@ FORMAT_HINTS = {"JPG": "Small, universal", "PNG": "Lossless · transparency", "W
                 "MP4": "Video", "WEBM": "Web video", "MKV": "Video container",
                 "CSV": "Spreadsheet", "XLSX": "Excel"}
 
-IMAGE_TOOLS = ["Compress", "Resize", "Crop", "Edit", "Annotate", "Redact", "Add BG", "Metadata"]
+IMAGE_TOOLS = ["Compress", "Resize", "Crop", "Edit", "Annotate", "Redact", "Add BG", "Metadata",
+               "Remove BG", "Watermark"]
 PDF_TOOLS = ["Compress", "Split", "Rotate", "Protect", "Extract", "Metadata"]
 AUDIO_TOOLS = ["Voice", "Sample", "CleanTags", "Loud", "Trim"]
 VIDEO_TOOLS = ["Voice", "Sample", "CleanTags", "Mute", "Subs", "Loud", "Trim"]
@@ -373,6 +378,13 @@ class DragShiftApp(QObject):
                                    hint="Find duplicates"))
         if cat == "image" and len(paths) == 1:
             extras.append(Item("Palette", "🎨", key="tool:Palette", hint="Color palette"))
+            extras.append(Item("Favicon", GLYPHS["Favicon"], key="tool:Favicon", hint=HINTS["Favicon"]))
+        if cat == "image" and len(same) == 2:
+            extras.append(Item("VisualDiff", GLYPHS["VisualDiff"], key="tool:VisualDiff",
+                               hint=HINTS["VisualDiff"]))
+        if cat == "video" and len(paths) == 1:
+            extras.append(Item("Storyboard", GLYPHS["Storyboard"], key="tool:Storyboard",
+                               hint=HINTS["Storyboard"]))
         if cat == "pdf":
             extras.append(Item("Outline", "🗂", key="tool:Outline", hint="Extract outline"))
         if extras:
@@ -408,7 +420,8 @@ class DragShiftApp(QObject):
             return
         if cat is None or name in ("ZIP", "Hash", "B64", "Portfolio", "Diff", "Playlist",
                                    "Contact", "GIF", "Join", "Duplicates", "Palette",
-                                   "Outline", "Folder", "QR", "SplitFile"):
+                                   "Outline", "Folder", "QR", "SplitFile", "Favicon",
+                                   "VisualDiff", "Storyboard"):
             from . import filetools, multitools
             if name == "ZIP":
                 all_paths = paths  # bundle the mixed selection as dropped
@@ -482,6 +495,15 @@ class DragShiftApp(QObject):
             elif name == "SplitFile":
                 self.submit("tool:SplitFile", paths,
                             lambda: [o for p in paths for o in filetools.split_file(p)], "Splitting…")
+            elif name == "Favicon":
+                self.submit("tool:Favicon", paths,
+                            lambda: [o for p in paths for o in filetools.favicon_pack(p)], "Favicons…")
+            elif name == "VisualDiff":
+                self.submit("tool:VisualDiff", paths[:2],
+                            lambda: [imaging.image_diff(paths[0], paths[1])], "Diffing images…")
+            elif name == "Storyboard":
+                self.submit("tool:Storyboard", paths, lambda: [multitools.video_storyboard(p) for p in paths],
+                            "Storyboarding…")
             return
         paths = [p for p in paths if category(p) == cat]
         kind, name = item.key.split(":", 1)
@@ -620,6 +642,37 @@ class DragShiftApp(QObject):
             if name == "Specimen":
                 self.submit("tool:Specimen", paths,
                             lambda: [o for p in paths for o in nbtools.font_specimen(p)], "Rendering…")
+            return
+        if cat == "image" and name in ("Remove BG", "Watermark"):
+            from . import bgremove
+            if name == "Remove BG":
+                from .util import CONFIG
+                mode = str(CONFIG.get("bg_mode", "solid"))
+                if mode == "ai":
+                    self.submit("tool:Remove BG", paths,
+                                lambda: [bgremove.remove_ai_background(p) for p in paths],
+                                "AI cutout…")
+                else:
+                    self.submit("tool:Remove BG", paths,
+                                lambda: [bgremove.remove_solid_background(p) for p in paths],
+                                "Removing background…")
+            else:
+                try:
+                    from PySide6.QtWidgets import QInputDialog
+                    text, ok = QInputDialog.getText(None, "Watermark", "Text:")
+                    if not ok or not text.strip():
+                        return
+                except Exception:
+                    return
+                def _wm(paths=paths, text=text):
+                    from .convert import open_image
+                    from . import imaging as _im
+                    outs = []
+                    for p in paths:
+                        im = open_image(p)
+                        outs.append(_im.save_like(_im.watermark(im, text), p, "Watermarked"))
+                    return outs
+                self.submit("tool:Watermark", paths, _wm, "Watermarking…")
             return
         windows = {"Crop": tools.CropWindow, "Add BG": tools.AddBgWindow, "Annotate": tools.AnnotateWindow,
                    "Redact": tools.RedactWindow, "Edit": tools.EditWindow, "Metadata": tools.MetadataWindow}

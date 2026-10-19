@@ -24,19 +24,19 @@ except ImportError:  # pragma: no cover
     import fitz  # type: ignore
 
 IMAGE_TARGETS = ["PNG", "JPG", "WEBP", "HEIC", "TIFF", "AVIF", "BMP", "PDF", "ICO", "GIF"]
-PDF_TARGETS = ["JPG", "PNG", "DOCX", "TXT"]
+PDF_TARGETS = ["JPG", "PNG", "DOCX", "TXT", "HTML"]
 DOCX_TARGETS = ["PDF", "TXT", "HTML"]
 TEXT_TARGETS = ["PDF", "DOCX", "TXT", "HTML"]
 AUDIO_TARGETS = ["MP3", "WAV", "OGG", "OPUS", "FLAC", "M4A"]
-VIDEO_TARGETS = ["MP4", "WEBM", "MKV", "MP3", "WAV", "GIF", "PNG"]
-SHEET_TARGETS = ["CSV", "XLSX", "HTML", "PDF", "TXT"]
+VIDEO_TARGETS = ["MP4", "WEBM", "MKV", "MP3", "WAV", "GIF", "PNG", "JPG", "SRT", "VTT"]
+SHEET_TARGETS = ["CSV", "XLSX", "HTML", "PDF", "TXT", "JSON", "VCF"]
 PRESENT_TARGETS = ["PDF", "TXT", "HTML"]
 EBOOK_TARGETS = ["TXT", "HTML", "PDF", "DOCX"]
 SUBTITLE_TARGETS = ["SRT", "VTT", "TXT"]
 NOTEBOOK_TARGETS = ["PY", "HTML", "TXT", "PDF"]
 EMAIL_TARGETS = ["TXT", "HTML", "PDF"]
 CONTACT_TARGETS = ["CSV", "TXT", "HTML"]
-FONT_TARGETS = ["PNG", "PDF", "TXT"]
+FONT_TARGETS = ["PNG", "PDF", "TXT", "WOFF", "WOFF2"]
 
 PIL_FORMAT = {"PNG": "PNG", "JPG": "JPEG", "WEBP": "WEBP", "HEIC": "HEIF", "TIFF": "TIFF",
               "AVIF": "AVIF", "BMP": "BMP", "PDF": "PDF", "ICO": "ICO", "GIF": "GIF"}
@@ -141,6 +141,19 @@ def image_to(src: str | Path, target: str) -> list[Path]:
     return [out]
 
 
+def svg_to_image(src: str | Path, target: str) -> list[Path]:
+    """Rasterize an SVG via PyMuPDF (no extra deps)."""
+    target = target.upper()
+    if target not in ("PNG", "JPG", "WEBP", "BMP", "TIFF", "PDF"):
+        raise ValueError(f"Can't convert SVG to {target}")
+    with fitz.open(src) as doc:
+        pix = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        im = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+    out = sibling(src, ext="." + target.lower())
+    save_image(im, out, target)
+    return [out]
+
+
 def images_to_single_pdf(srcs: list[str | Path]) -> list[Path]:
     pages = [flatten(open_image(s)) for s in srcs]
     out = sibling(srcs[0], "Combined", ".pdf")
@@ -171,6 +184,16 @@ def pdf_to_txt(src: str | Path) -> list[Path]:
         text = "\n\f\n".join(page.get_text("text") for page in doc)
     out = sibling(src, ext=".txt")
     out.write_text(text, encoding="utf-8")
+    return [out]
+
+
+def pdf_to_html(src: str | Path) -> list[Path]:
+    with open_pdf(src) as doc:
+        parts = [page.get_text("xhtml") for page in doc]
+    out = sibling(src, ext=".html")
+    out.write_text("<!doctype html>\n<html><head><meta charset='utf-8'>\n"
+                   f"<title>{html.escape(Path(src).name)}</title></head>\n<body>\n"
+                   + "\n<hr>\n".join(parts) + "\n</body></html>", encoding="utf-8")
     return [out]
 
 
@@ -350,15 +373,59 @@ def read_text(src: str | Path) -> str:
 
 def text_to_pdf(src: str | Path) -> list[Path]:
     out = sibling(src, ext=".pdf")
-    html_to_pdf(f"<pre>{html.escape(read_text(src))}</pre>", out)
+    if Path(src).suffix.lower() in (".html", ".htm"):
+        html_to_pdf(read_text(src), out)
+    else:
+        html_to_pdf(f"<pre>{html.escape(read_text(src))}</pre>", out)
     return [out]
 
 
 def text_to_docx(src: str | Path) -> list[Path]:
     from docx import Document
+    from docx.shared import Pt
+    import re as _re
+    ext = Path(src).suffix.lower()
     d = Document()
-    for line in read_text(src).splitlines():
-        d.add_paragraph(line)
+    if ext in (".md", ".markdown"):
+        for ln in read_text(src).splitlines():
+            s = ln.rstrip()
+            m = _re.match(r"^(#{1,6})\s+(.*)", s)
+            if m:
+                d.add_heading(m.group(2), level=min(len(m.group(1)), 6))
+                continue
+            if _re.match(r"^(\*|-)\s+", s):
+                d.add_paragraph(_re.sub(r"^(\*|-)\s+", "", s), style="List Bullet")
+                continue
+            if not s.strip():
+                continue
+            p = d.add_paragraph()
+            for chunk in _re.split(r"(\*\*.+?\*\*)", s):
+                if chunk.startswith("**") and chunk.endswith("**"):
+                    p.add_run(chunk[2:-2]).bold = True
+                else:
+                    p.add_run(chunk)
+    elif ext in (".html", ".htm"):
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(read_text(src), "lxml")
+            body = soup.body or soup
+            for el in body.descendants:
+                if getattr(el, "name", None) in ("h1", "h2", "h3"):
+                    lvl = int(el.name[1])
+                    d.add_heading(el.get_text(), level=min(lvl, 6))
+                elif getattr(el, "name", None) == "p" and el.get_text(strip=True):
+                    d.add_paragraph(el.get_text())
+                elif getattr(el, "name", None) == "li" and el.get_text(strip=True):
+                    d.add_paragraph(el.get_text(), style="List Bullet")
+            if not d.paragraphs:
+                for line in read_text(src).splitlines():
+                    d.add_paragraph(line)
+        except Exception:
+            for line in read_text(src).splitlines():
+                d.add_paragraph(line)
+    else:
+        for line in read_text(src).splitlines():
+            d.add_paragraph(line)
     out = sibling(src, ext=".docx")
     d.save(out)
     return [out]
@@ -446,6 +513,11 @@ def sheet_convert(src: str | Path, target: str) -> list[Path]:
         return sheettools.sheet_to_pdf(src)
     if target == "TXT":
         return sheettools.sheet_to_txt(src)
+    if target == "JSON":
+        return sheettools.sheet_to_json(src)
+    if target == "VCF":
+        from . import nbtools
+        return nbtools.csv_to_vcf(src)
     # YAML/JSON land here via text cat; sheet yaml->json handled in app tools
     raise ValueError(f"Can't convert sheet to {target}")
 
@@ -469,11 +541,13 @@ def targets_for(cat: str, src_ext: str) -> list[str]:
     if cat == "text":
         low = src_ext
         if low in ("json", "jsonc"):
-            t += [x for x in ("YAML",) if x != cur]
+            t += [x for x in ("YAML", "CSV") if x != cur]
         elif low in ("yaml", "yml"):
             t += [x for x in ("JSON", "TOML") if x != cur]
         elif low == "toml":
             t += [x for x in ("JSON",) if x != cur]
+        elif low == "svg":
+            t += [x for x in ("PNG", "JPG", "PDF") if x != cur]
     return t
 
 
@@ -486,9 +560,19 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
             return pdf_to_images(src, target)
         if target == "TXT":
             return pdf_to_txt(src)
+        if target == "HTML":
+            return pdf_to_html(src)
         if target == "DOCX":
             return pdf_to_docx(src)
     if cat == "docx":
+        if Path(src).suffix.lower() == ".odt":
+            from . import sheettools
+            if target == "PDF":
+                return sheettools.odt_to_pdf(src)
+            if target == "TXT":
+                return sheettools.odt_to_txt(src)
+            if target == "HTML":
+                return sheettools.odt_to_html(src)
         if target == "PDF":
             return docx_to_pdf(src)
         if target == "TXT":
@@ -500,6 +584,8 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
                            encoding="utf-8")
             return [out]
     if cat == "text":
+        if Path(src).suffix.lower() == ".svg" and target in IMAGE_TARGETS:
+            return svg_to_image(src, target)
         if target == "PDF":
             return text_to_pdf(src)
         if target == "DOCX":
@@ -511,6 +597,9 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
         if target == "YAML":
             from . import texttools
             return texttools.json_to_yaml(src)
+        if target == "CSV" and Path(src).suffix.lower() in (".json", ".jsonc"):
+            from . import texttools
+            return texttools.json_to_csv(src)
         if target == "JSON":
             from . import sheettools
             return [sheettools.yaml_to_json(src)[0]]
@@ -609,4 +698,6 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
             return nbtools.font_specimen(src, "PNG")
         if target == "PDF":
             return nbtools.font_specimen(src, "PDF")
+        if target in ("WOFF", "WOFF2"):
+            return nbtools.font_convert(src, target)
     raise ValueError(f"Can't convert {cat} to {target}")

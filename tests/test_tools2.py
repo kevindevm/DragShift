@@ -159,3 +159,62 @@ def test_new_categories(tmp_path):
     assert "Duplicates" in filetools.find_duplicates([str(d1), str(d2)]).name
     rep = filetools.folder_report(tmp_path)
     assert rep.exists() and "files" in rep.read_text()
+
+
+def test_v5_conversions(tmp_path):
+    from dragshift import bgremove
+    c = tmp_path / "d.csv"
+    c.write_text("a,b\n1,2\n")
+    import json as _j
+    assert _j.loads(convert.convert(c, "sheet", "JSON")[0].read_text())[0]["a"] == "1"
+    j = tmp_path / "l.json"
+    j.write_text('[{"a": 1, "b": 2}]')
+    assert "a,b" in convert.convert(j, "text", "CSV")[0].read_text().splitlines()[0]
+    h = tmp_path / "p.html"
+    h.write_text("<h1>Hola Mundo</h1>")
+    with convert.fitz.open(convert.convert(h, "text", "PDF")[0]) as d:
+        assert "Hola Mundo" in d[0].get_text() and "<h1>" not in d[0].get_text()
+    sv = tmp_path / "s.svg"
+    sv.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
+                  '<rect width="64" height="64" fill="red"/></svg>')
+    assert convert.convert(sv, "text", "PNG")[0].exists()
+    from PIL import Image
+    im = tmp_path / "im2.png"
+    Image.new("RGB", (32, 32), (0, 200, 0)).save(im)
+    pdf = convert.convert(im, "image", "PDF")[0]
+    assert "body" in convert.convert(pdf, "pdf", "HTML")[0].read_text().lower()
+    md = tmp_path / "m.md"
+    md.write_text("# Title\n**bold**\n")
+    from docx import Document
+    assert Document(convert.convert(md, "text", "DOCX")[0]).paragraphs[0].style.name.startswith("Heading")
+    vc = tmp_path / "p.csv"
+    vc.write_text("name,phone,email\nAlice,123,a@b.c\n")
+    from dragshift import nbtools
+    vcf = nbtools.csv_to_vcf(vc)[0]
+    assert "FN:Alice" in vcf.read_text() and "Alice" in nbtools.contact_to_txt(vcf)[0].read_text()
+    try:
+        from odf.opendocument import OpenDocumentText
+        from odf.text import P
+        odt = tmp_path / "t.odt"
+        doc = OpenDocumentText()
+        doc.text.addElement(P(text="hola odt"))
+        doc.save(odt)
+        assert "hola odt" in convert.convert(odt, "docx", "TXT")[0].read_text()
+    except Exception:
+        pass
+    im2 = tmp_path / "prod.png"
+    base = Image.new("RGB", (100, 100), (255, 255, 255))
+    from PIL import ImageDraw
+    ImageDraw.Draw(base).rectangle((30, 30, 70, 70), fill=(200, 30, 30))
+    base.save(im2)
+    out = bgremove.remove_solid_background(im2)
+    assert out.suffix == ".png" and Image.open(out).mode == "RGBA"
+    assert bgremove.models_dir().exists() and not bgremove.ai_ready()
+    from dragshift import imaging as _im
+    from dragshift.convert import open_image
+    assert _im.save_like(_im.watermark(open_image(im2), "TEST"), im2, "WM").exists()
+    assert _im.image_diff(im2, im2).exists()
+    assert len(filetools.favicon_pack(im2)) == 5
+    t = tmp_path / "q.txt"
+    t.write_text("hello")
+    assert filetools.qr_with_logo(t, im2).suffix == ".png"

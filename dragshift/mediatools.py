@@ -103,6 +103,8 @@ def video_to(src: str | Path, target: str) -> list[Path]:
     target = target.upper()
     if target in AUDIO_TARGETS:
         return audio_to(src, target)
+    if target in ("SRT", "VTT"):
+        return [extract_subs(src, target.lower())]
     ff = _ffmpeg()
     if target == "GIF":
         out = sibling(src, ext=".gif")
@@ -119,6 +121,12 @@ def video_to(src: str | Path, target: str) -> list[Path]:
     if target == "PNG":
         from .util import CONFIG
         out = sibling(src, "Thumb", ".png")
+        _run([ff, "-y", "-ss", str(CONFIG.get("thumb_sec", 1)), "-i", str(src),
+              "-vframes", "1", str(out)])
+        return [out]
+    if target == "JPG":
+        from .util import CONFIG
+        out = sibling(src, "Thumb", ".jpg")
         _run([ff, "-y", "-ss", str(CONFIG.get("thumb_sec", 1)), "-i", str(src),
               "-vframes", "1", str(out)])
         return [out]

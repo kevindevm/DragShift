@@ -7,7 +7,7 @@ from pathlib import Path
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".tif", ".tiff",
               ".avif", ".bmp", ".gif", ".ico"}
 PDF_EXTS = {".pdf"}
-DOCX_EXTS = {".docx"}
+DOCX_EXTS = {".docx", ".odt"}
 TEXT_EXTS = {".txt", ".md", ".markdown", ".log",
              ".json", ".jsonc", ".xml", ".xsl", ".xsd", ".svg", ".plist", ".config",
              ".iml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",

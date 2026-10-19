@@ -334,3 +334,24 @@ def json_to_yaml(src: str | Path) -> list[Path]:
     out = sibling(src, ext=".yaml")
     out.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     return [out]
+
+
+def json_to_csv(src: str | Path) -> list[Path]:
+    """list[dict] or dict → CSV (JSONL tolerated, one object per line)."""
+    from .util import UserError
+    raw = _check_size(src).strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = [json.loads(ln) for ln in raw.splitlines() if ln.strip()]
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        raise UserError("JSON→CSV needs an object or a list of objects.")
+    fields = list(data[0].keys())
+    out = sibling(src, ext=".csv")
+    with out.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(data)
+    return [out]

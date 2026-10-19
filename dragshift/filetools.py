@@ -160,6 +160,57 @@ def qr_of_text(src: str | Path) -> Path:
     return out
 
 
+def qr_with_logo(src: str | Path, logo: str | Path | None = None) -> Path:
+    """QR with centered logo (20% of size, quiet zone kept)."""
+    from .convert import open_image, read_text
+    try:
+        import qrcode
+    except Exception as e:
+        raise UserError(f"QR needs qrcode: {e}")
+    text = read_text(src)
+    if len(text.encode("utf-8")) > 2900:
+        raise UserError("Text too long for a QR code (max ~3 KB).")
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_H, box_size=10, border=4)
+    qr.add_data(text)
+    qr.make(fit=True)
+    try:
+        from qrcode.image.styledmod import StyledPilImage
+        img = qr.make_image(image_factory=StyledPilImage).convert("RGB")
+    except Exception:
+        img = qr.make_image().convert("RGB")
+    if logo is not None:
+        from PIL import Image as _I
+        lg = open_image(logo).convert("RGBA")
+        side = min(img.size) // 5
+        lg.thumbnail((side, side), _I.LANCZOS)
+        img.paste(lg, ((img.width - lg.width) // 2, (img.height - lg.height) // 2), lg)
+    out = sibling(src, "QR Logo", ".png")
+    img.save(out)
+    return out
+
+
+def favicon_pack(src: str | Path) -> list[Path]:
+    """ICO multi-size + PNG 180/192/512 + snippet.html from any image."""
+    from .convert import open_image
+    from PIL import Image as _I, ImageOps as _Ops
+    im = open_image(src).convert("RGBA")
+    outs = []
+    ico = sibling(src, ext=".ico")
+    sizes = [(s, s) for s in (16, 24, 32, 48, 64, 128, 256) if s <= max(im.size)]
+    big = _Ops.contain(im, (256, 256)) if max(im.size) > 256 else im
+    big.save(ico, "ICO", sizes=sizes or [(16, 16)])
+    outs.append(ico)
+    for px in (180, 192, 512):
+        p = sibling(src, f"{px}", ".png")
+        _Ops.contain(im, (px, px)).save(p, "PNG")
+        outs.append(p)
+    html_p = sibling(src, "snippet", ".html")
+    html_p.write_text('<link rel="icon" href="favicon.ico">\n'
+                      f'<link rel="apple-touch-icon" href="{Path(outs[1]).name}">\n', encoding="utf-8")
+    outs.append(html_p)
+    return outs
+
+
 def batch_rename_preview(srcs: list[str | Path]) -> dict[str, str]:
     """Sanitize: lower, spaces->_, strip weird chars. Returns old->new mapping."""
     mapping: dict[str, str] = {}

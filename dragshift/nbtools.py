@@ -272,6 +272,22 @@ def contact_merge(srcs: list[str | Path]) -> Path:
     return out
 
 
+def csv_to_vcf(src: str | Path) -> list[Path]:
+    """name,phone,email CSV → vCard (round-trips with contact_to_csv)."""
+    import csv as _csv
+    rows = list(_csv.DictReader(read_text(src).splitlines()))
+    if not rows or not {"name", "phone", "email"} & set(rows[0].keys()):
+        raise UserError("CSV needs name/phone/email columns.")
+    cards = []
+    for r in rows:
+        cards.append("BEGIN:VCARD\nVERSION:3.0\n"
+                     f"FN:{r.get('name', '')}\nTEL:{r.get('phone', '')}\n"
+                     f"EMAIL:{r.get('email', '')}\nEND:VCARD")
+    out = sibling(src, ext=".vcf")
+    out.write_text("\n".join(cards) + "\n", encoding="utf-8")
+    return [out]
+
+
 # ---------------------------------------------------------------- font (.ttf/.otf/...)
 def font_info(src: str | Path) -> list[Path]:
     try:
@@ -304,6 +320,27 @@ def font_info(src: str | Path) -> list[Path]:
                    f"Style: {names.get(2, '')}\n"
                    f"Full name: {names.get(4, '')}\n"
                    f"Glyphs: {glyphs}\nUnits/em: {upm}\n", encoding="utf-8")
+    return [out]
+
+
+def font_convert(src: str | Path, target: str) -> list[Path]:
+    try:
+        from fontTools.ttLib import TTFont
+    except Exception as e:
+        raise UserError(f"Font support needs fontTools: {e}")
+    target = target.upper()
+    if target == "WOFF2":
+        try:
+            import brotli  # noqa: F401
+        except Exception:
+            raise UserError("WOFF2 needs brotli (pip install brotli).")
+    try:
+        f = TTFont(str(src))
+    except Exception as e:
+        raise UserError(f"Couldn't read font: {e}")
+    f.flavor = "woff2" if target == "WOFF2" else "woff"
+    out = sibling(src, ext="." + target.lower())
+    f.save(out)
     return [out]
 
 

@@ -35,6 +35,47 @@ def contact_sheet(srcs: list[str | Path], thumb: int = 400) -> Path:
     return out
 
 
+def video_storyboard(src: str | Path, n: int = 9) -> Path:
+    """Filmstrip of N frames → contact sheet JPG (seeks across duration)."""
+    import re as _re
+    import subprocess
+    import tempfile
+    from PIL import Image
+    from . import mediatools
+    ff = mediatools._ffmpeg()
+    r = subprocess.run([ff, "-i", str(src)], capture_output=True, text=True)
+    m = _re.search(r"Duration: (\d+):(\d+):([\d.]+)", r.stderr)
+    dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else 10.0
+    with tempfile.TemporaryDirectory() as d:
+        thumbs = []
+        for i in range(max(2, min(12, n))):
+            pct = i / max(1, n - 1) if n > 1 else 0.0
+            out = str(Path(d) / f"f{i:02d}.png")
+            subprocess.run([ff, "-y", "-ss", str(dur * pct), "-i", str(src),
+                            "-vframes", "1", out], capture_output=True)
+            try:
+                thumbs.append(Image.open(out).convert("RGB"))
+            except Exception:
+                continue
+        if not thumbs:
+            raise UserError("Couldn't extract frames from this video.")
+        import math as _m
+        cols = _m.ceil(_m.sqrt(len(thumbs)))
+        rows = _m.ceil(len(thumbs) / cols)
+        thumb = 320
+        sheet = Image.new("RGB", (cols * thumb, rows * thumb), (20, 20, 28))
+        small = []
+        for im in thumbs:
+            im.thumbnail((thumb, thumb), Image.LANCZOS)
+            small.append(im)
+        for i, im in enumerate(small):
+            x, y = (i % cols) * thumb, (i // cols) * thumb
+            sheet.paste(im, (x + (thumb - im.width) // 2, y + (thumb - im.height) // 2))
+        out = sibling(src, "Storyboard", ".jpg")
+        sheet.save(out, "JPEG", quality=88)
+        return out
+
+
 def images_to_gif(srcs: list[str | Path]) -> Path:
     from PIL import Image
     srcs = _need_images(srcs)
@@ -77,7 +118,6 @@ def merge_csv_xlsx(srcs: list[str | Path]) -> Path:
 
 
 def merge_to_single_pdf(srcs: list[str | Path]) -> Path:
-    """Portfolio: text/code/sheets -> single PDF (images appended too)."""
     from .convert import html_to_pdf, open_image
     import html as ihtml
     from .convert import read_text

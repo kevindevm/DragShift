@@ -1296,7 +1296,8 @@ class CompressWindow(ToolWindow):
 # ================================================================ RESIZE
 class ResizeWindow(ToolWindow):
     tool_name = "Resize"
-    PRESETS = [("25%", "pct", 25), ("50%", "pct", 50), ("75%", "pct", 75), ("3840", "long", 3840),
+    PRESETS = [("25%", "pct", 25), ("50%", "pct", 50), ("75%", "pct", 75), ("200%", "pct", 200),
+               ("400%", "pct", 400), ("3840", "long", 3840),
                ("2560", "long", 2560), ("1920", "long", 1920), ("1280", "long", 1280), ("800", "long", 800)]
 
     def __init__(self, paths, notify):

@@ -28,6 +28,7 @@ DEFAULTS = {
     "hub_ms": 420,
     "high_contrast": False,
     "font_scale": 100,
+    "bg_mode": "solid",
     "mru": {},
     "trigger": "shift",
     "welcomed": False,
@@ -56,7 +57,7 @@ class Settings:
 
     def apply(self):
         for k in ("output", "jpg_quality", "pdf_dpi", "audio_bitrate", "video_crf", "thumb_sec",
-                  "toast_ms", "hub_ms", "high_contrast", "font_scale"):
+                  "toast_ms", "hub_ms", "high_contrast", "font_scale", "bg_mode"):
             CONFIG[k] = self.get(k)
 
 
@@ -190,6 +191,13 @@ class SettingsWindow(GlassWindow):
         self.fs = combo([(90, "Small"), (100, "Default"), (120, "Large")], self.s.get("font_scale"))
         self.fs.currentIndexChanged.connect(lambda _: self._save("font_scale", self.fs.currentData()))
         grid.addWidget(self.fs, r, 1)
+        r += 1
+
+        grid.addWidget(QLabel("Background removal"), r, 0)
+        self.bgm = combo([("solid", "Solid (instant)"), ("ai", "AI u2net (downloads ~176 MB once)")],
+                         self.s.get("bg_mode"))
+        self.bgm.currentIndexChanged.connect(lambda _: self._save("bg_mode", self.bgm.currentData()))
+        grid.addWidget(self.bgm, r, 1)
         r += 1
 
         if IS_WIN or IS_MAC or IS_LINUX:

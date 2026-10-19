@@ -74,7 +74,10 @@ You can also right-click a file → **DragShift…**, use **Send to → DragShif
 | Notebooks (.ipynb) | PY, HTML, TXT, PDF | **Strip outputs** · **Code only** |
 | Emails (.eml) | TXT, HTML, PDF | **Extract attachments** |
 | Contacts & calendar (.vcf, .ics) | CSV, TXT, HTML | **Merge** (.vcf) |
-| Fonts (.ttf, .otf, .woff2) | PNG/TXT specimen, PDF | **Specimen** · metadata |
+| Fonts (.ttf, .otf, .woff2) | PNG/TXT specimen, PDF, **WOFF/WOFF2** | **Specimen** · metadata |
+| Sheets (.xlsx, .csv, .sqlite) | CSV, XLSX, HTML, PDF, TXT, **JSON, VCF** | merge multi-hoja |
+| Text+code | … + **HTML→PDF real**, **MD→DOCX**, **JSON→CSV**, **SVG→PNG**, **PDF→HTML**, **CSV→VCF** | **Diff visual**, **Watermark**, **Remove BG** (solid/AI), **Favicon pack**, **QR logo** |
+| PDF merge | con TOC/bookmarks automáticos | **Storyboard** (video→filmstrip) |
 | Multi-file (any mix) | — | **ZIP bundle** · **Portfolio PDF** · **Diff** (2 texts → HTML) · **Contact sheet / GIF** (images) · **Playlist .m3u** (audio/video) · **Hash / B64 / QR / Split / Encrypt** |
 
 **Settings** (tray menu): trigger key (Shift, Ctrl or Alt), where results go (next to the original or a `DragShift` subfolder), JPG/WebP quality, PDF → image resolution, and start at login.

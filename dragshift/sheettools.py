@@ -185,6 +185,97 @@ def sheet_to_txt(src: str | Path) -> list[Path]:
     return [out]
 
 
+def sheet_to_json(src: str | Path) -> list[Path]:
+    ext = Path(src).suffix.lower()
+    if ext == ".xlsx":
+        header, rows = _rows_of_xlsx(src)
+    elif ext in (".sqlite", ".sqlite3", ".db"):
+        csvp = sqlite_to_csv(src)[0]
+        text = csvp.read_text(encoding="utf-8")
+        parsed = list(csv.reader(io.StringIO(text)))
+        csvp.unlink()
+        header, rows = (parsed[0], parsed[1:]) if parsed else ([], [])
+    elif ext == ".ods":
+        header, rows = ods_rows(src)
+    else:
+        from .convert import read_text
+        text = read_text(src)
+        try:
+            dialect = csv.Sniffer().sniff(text[:8000], delimiters=[",", ";", "\t", "|"])
+        except csv.Error:
+            dialect = csv.excel
+        parsed = list(csv.reader(io.StringIO(text), dialect))
+        header, rows = (parsed[0], parsed[1:]) if parsed else ([], [])
+    data = [dict(zip(header, [c if c != "" else None for c in r])) for r in rows]
+    out = sibling(src, ext=".json")
+    out.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return [out]
+
+
+def _odp_texts(src: str | Path) -> list[str] | None:
+    """Slide texts from an ODP via odfpy (fallback when pptx can't read it)."""
+    if Path(src).suffix.lower() != ".odp":
+        return None
+    try:
+        from odf.opendocument import load
+        from odf.draw import Page
+        from odf.text import P
+    except Exception as e:
+        raise UserError(f"ODP support needs odfpy: {e}")
+    try:
+        doc = load(str(src))
+    except Exception as e:
+        raise UserError(f"Couldn't read presentation: {e}")
+    texts = []
+    for page in doc.getElementsByType(Page):
+        for p in page.getElementsByType(P):
+            t = "".join(n.data for n in p.childNodes if hasattr(n, "data")).strip()
+            if t:
+                texts.append(t)
+    return texts
+
+
+def odt_text(src: str | Path) -> str:
+    try:
+        from odf.opendocument import load
+        from odf.text import P
+    except Exception as e:
+        raise UserError(f"ODT support needs odfpy: {e}")
+    try:
+        doc = load(str(src))
+    except Exception as e:
+        raise UserError(f"Couldn't read document: {e}")
+    return "\n".join("".join(n.data for n in p.childNodes if hasattr(n, "data"))
+                     for p in doc.getElementsByType(P))
+
+
+def odt_to_txt(src: str | Path) -> list[Path]:
+    out = sibling(src, ext=".txt")
+    out.write_text(odt_text(src), encoding="utf-8")
+    return [out]
+
+
+def odt_to_html(src: str | Path) -> list[Path]:
+    out = sibling(src, ext=".html")
+    out.write_text("<!doctype html><html><head><meta charset='utf-8'></head><body><pre>"
+                   + html.escape(odt_text(src)) + "</pre></body></html>", encoding="utf-8")
+    return [out]
+
+
+def odt_to_pdf(src: str | Path) -> list[Path]:
+    from .convert import html_to_pdf
+    h = odt_to_html(src)[0]
+    try:
+        out = sibling(src, ext=".pdf")
+        html_to_pdf(h.read_text(encoding="utf-8"), out)
+        return [out]
+    finally:
+        try:
+            h.unlink()
+        except OSError:
+            pass
+
+
 def yaml_to_toml(src: str | Path) -> list[Path]:
     try:
         import yaml
@@ -206,9 +297,14 @@ def yaml_to_toml(src: str | Path) -> list[Path]:
 def present_to_txt(src: str | Path) -> list[Path]:
     try:
         from pptx import Presentation
-    except Exception as e:
-        raise UserError(f"Slides support needs python-pptx: {e}")
-    prs = Presentation(str(src))
+        prs = Presentation(str(src))
+    except Exception:
+        texts = _odp_texts(src)
+        if texts is None:
+            raise
+        out = sibling(src, ext=".txt")
+        out.write_text("\n".join(texts).strip() + "\n", encoding="utf-8")
+        return [out]
     lines = []
     for i, slide in enumerate(prs.slides, 1):
         lines.append(f"--- Slide {i} ---")
@@ -225,9 +321,16 @@ def present_to_txt(src: str | Path) -> list[Path]:
 def present_to_html(src: str | Path) -> list[Path]:
     try:
         from pptx import Presentation
-    except Exception as e:
-        raise UserError(f"Slides support needs python-pptx: {e}")
-    prs = Presentation(str(src))
+        prs = Presentation(str(src))
+    except Exception:
+        texts = _odp_texts(src)
+        if texts is None:
+            raise
+        out = sibling(src, ext=".html")
+        out.write_text("<!doctype html><html><head><meta charset='utf-8'></head><body>"
+                       + "".join(f"<p>{html.escape(t)}</p>" for t in texts) + "</body></html>",
+                       encoding="utf-8")
+        return [out]
     parts = []
     for i, slide in enumerate(prs.slides, 1):
         parts.append(f"<h2>Slide {i}</h2>")

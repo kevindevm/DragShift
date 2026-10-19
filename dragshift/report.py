@@ -154,7 +154,8 @@ def summarize(action: str, srcs: list, outs: list, extra: str = "") -> Result:
     if name in ("Voice", "Sample", "CleanTags", "Mute", "ZIP", "Hash", "B64", "QR",
                 "Contact", "GIF", "Playlist", "Diff", "Portfolio", "SplitFile",
                 "Join", "Subs", "Loud", "Trim", "Shift", "Merge", "Strip", "Code",
-                "Attach", "Specimen", "Duplicates", "Palette", "Outline", "Folder"):
+                "Attach", "Specimen", "Duplicates", "Palette", "Outline", "Folder",
+                "Remove BG", "Watermark", "Favicon", "VisualDiff", "Storyboard"):
         verb = {"Voice": "Voice MP3", "Sample": "Sampled", "CleanTags": "Metadata cleaned",
                 "Mute": "Muted", "ZIP": f"Zipped {len(srcs)} files", "Hash": "Hashed (SHA-256)",
                 "B64": "Base64 encoded", "QR": "QR code", "Contact": "Contact sheet",
@@ -166,7 +167,9 @@ def summarize(action: str, srcs: list, outs: list, extra: str = "") -> Result:
                 "Code": "Code extracted", "Attach": "Attachments extracted",
                 "Specimen": "Specimen rendered", "Duplicates": "Duplicates found",
                 "Palette": "Palette sampled", "Outline": "Outline extracted",
-                "Folder": "Folder scanned"}[name]
+                "Folder": "Folder scanned", "Remove BG": "Background removed",
+                "Watermark": "Watermarked", "Favicon": "Favicon pack",
+                "VisualDiff": "Images compared", "Storyboard": "Storyboard"}[name]
         return Result(verb, f"{o0.name} · {human_size(after)}", outs, srcs)
 
     # generic

@@ -299,12 +299,21 @@ def split_pdf(src: str | Path) -> list[Path]:
     return outs
 
 
-def merge_pdfs(srcs: list[str | Path]) -> Path:
+def merge_pdfs(srcs: list[str | Path], toc: bool = True) -> Path:
     out = sibling(srcs[0], "Merged", ".pdf")
     nd = fitz.open()
+    entries = []
     for s in srcs:
         with open_pdf(s) as d:
+            start = nd.page_count
             nd.insert_pdf(d)
+            if toc:
+                entries.append([1, Path(s).stem[:80], start + 1])
+    if toc and entries:
+        try:
+            nd.set_toc(entries)
+        except Exception:
+            pass
     nd.save(out, garbage=3, deflate=True)
     nd.close()
     return out
@@ -546,6 +555,48 @@ def pil_to_png_bytes(im: Image.Image) -> bytes:
     return buf.getvalue()
 
 
+def image_diff(a: str | Path, b: str | Path) -> Path:
+    """Side-by-side + red heatmap of differences between two images."""
+    from .convert import flatten, open_image
+    from .util import sibling
+    ia = flatten(open_image(a)).convert("RGB")
+    ib = flatten(open_image(b)).convert("RGB")
+    w, h = min(ia.width, ib.width), min(ia.height, ib.height)
+    ia, ib = ia.resize((w, h), Image.LANCZOS), ib.resize((w, h), Image.LANCZOS)
+    diff = ImageChops.difference(ia, ib).convert("L")
+    heat = ImageOps.colorize(diff.point(lambda v: min(255, v * 3)), (0, 0, 0), (255, 40, 40))
+    combo = Image.new("RGB", (w * 3 + 20, h + 30), (240, 240, 240))
+    combo.paste(ia, (0, 30))
+    combo.paste(ib, (w + 10, 30))
+    combo.paste(Image.blend(ia, heat, 0.55), (w * 2 + 20, 30))
+    out = sibling(a, f"vs {Path(b).stem} diff", ".png")
+    combo.save(out, "PNG")
+    return out
+
+
+def watermark(im: Image.Image, text: str, pos: str = "corner", alpha: int = 90) -> Image.Image:
+    """Text watermark (corner or tiled). Keeps image mode/size."""
+    from PIL import ImageDraw, ImageFont
+    base = im.convert("RGBA")
+    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    try:
+        font = ImageFont.load_default(size=max(16, min(base.size) // 20))
+    except Exception:
+        font = ImageFont.load_default()
+    if pos == "tile":
+        step_x, step_y = max(120, base.width // 4), max(80, base.height // 4)
+        for y in range(10, base.height, step_y):
+            for x in range(10, base.width, step_x):
+                d.text((x, y), text, font=font, fill=(255, 255, 255, alpha))
+    else:
+        bbox = d.textbbox((0, 0), text, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        d.text((base.width - tw - 16, base.height - th - 16), text, font=font,
+               fill=(255, 255, 255, alpha), stroke_width=1, stroke_fill=(0, 0, 0, alpha))
+    return Image.alpha_composite(base, layer)
+
+
 def palette(src: str | Path, n: int = 6) -> tuple[list[str], Path]:
     """Dominant colors of an image → (hex list, swatch PNG)."""
     from .convert import flatten, open_image
@@ -566,7 +617,6 @@ def palette(src: str | Path, n: int = 6) -> tuple[list[str], Path]:
 
 
 def pdf_outline(src: str | Path) -> str:
-    """Extract TOC + headings-by-font-size + per-page top terms (no AI)."""
     from .convert import open_pdf
     from collections import Counter
     import re as _re
