@@ -68,8 +68,12 @@ def _pandoc() -> Path | None:
     p = _which(["pandoc"])
     if p:
         return p
-    local = engines_root() / "pandoc" / ("pandoc.exe" if sys.platform == "win32" else "pandoc")
-    return local if local.exists() else None
+    local = engines_root() / "pandoc"
+    if local.exists():
+        for cand in list(local.rglob("pandoc.exe" if sys.platform == "win32" else "pandoc")):
+            if cand.is_file() and os.access(cand, os.X_OK if sys.platform != "win32" else os.F_OK):
+                return cand
+    return None
 
 
 PANDOC_URLS = {
@@ -182,10 +186,11 @@ def libreoffice_latest() -> tuple[str, str]:
         sub = _get(f"{LO_STABLE}{ver}/win/x86_64/")
     except Exception as e:
         raise UserError(f"Couldn't list LibreOffice {ver} files: {e}")
-    msis = re.findall(r'href="(LibreOffice_[\d.]+_Win_x64\.msi)"', sub)
+    msis = re.findall(r'href="(LibreOffice_[\d.]+_Win_x86-64\.msi)"', sub)
     if not msis:
         # language packs layout / archive naming fallback
-        msis = re.findall(r'href="((?:LibreOffice|LibO)[^"]*_Win_x64\.msi)"', sub)
+        msis = re.findall(r'href="((?:LibreOffice|LibO)[^"]*_Win_x86(?:-64|_64)\.msi)"', sub)
+        msis = [m for m in msis if "helppack" not in m and "sdk" not in m]
     if not msis:
         raise UserError(f"No Windows MSI found for LibreOffice {ver}.")
     return ver, f"{LO_STABLE}{ver}/win/x86_64/{msis[0]}"
@@ -220,8 +225,9 @@ def libreoffice_install(progress=None) -> Path:
         raise UserError(f"Couldn't download LibreOffice {ver}: {e}")
     target = dest / ver.replace(".", "_")
     target.mkdir(parents=True, exist_ok=True)
+    log_path = dest / "install.log"
     try:
-        r = subprocess.run(["msiexec", "/a", str(tmp), f"TARGETDIR={target}", "/qn"],
+        r = subprocess.run(["msiexec", "/a", f'"{tmp}"', f'TARGETDIR="{target}"', "/qn", "/L*v", f'"{log_path}"'],
                            capture_output=True, timeout=1800)
     except Exception as e:
         raise UserError(f"msiexec failed: {e}")
@@ -231,7 +237,7 @@ def libreoffice_install(progress=None) -> Path:
         except OSError:
             pass
     if r.returncode != 0:
-        raise UserError(f"LibreOffice install failed (msiexec code {r.returncode}).")
+        raise UserError(f"LibreOffice install failed (msiexec code {r.returncode}). See engines/install.log.")
     so = _soffice()
     if not so:
         raise UserError("Installed, but soffice.exe not found. Report this as a bug.")

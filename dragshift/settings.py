@@ -30,9 +30,12 @@ DEFAULTS = {
     "high_contrast": False,
     "font_scale": 100,
     "bg_mode": "solid",
+    "update_check": False,
+    "last_update_check": "",
     "hot_enable": False,
     "hot_src": "",
     "hot_to": "PDF",
+    "lang": "es",
     "trigger": "shift",
     "welcomed": False,
 }
@@ -61,7 +64,8 @@ class Settings:
     def apply(self):
         for k in ("output", "jpg_quality", "pdf_dpi", "audio_bitrate", "video_crf", "thumb_sec",
                   "toast_ms", "hub_ms", "high_contrast", "font_scale", "bg_mode",
-                  "hot_enable", "hot_src", "hot_to"):
+                  "hot_enable", "hot_src", "hot_to", "update_check", "last_update_check",
+                  "lang"):
             CONFIG[k] = self.get(k)
 
 
@@ -116,13 +120,20 @@ TRIGGERS = ([("shift", "Shift ⇧"), ("ctrl", "Control ⌃"), ("alt", "Option �
             else [("shift", "Shift"), ("ctrl", "Ctrl"), ("alt", "Alt")])
 OUTPUTS = [("next", "Next to the original"), ("folder", "In a “DragShift” subfolder")]
 DPIS = [(150, "150 dpi · small"), (200, "200 dpi · balanced"), (300, "300 dpi · print")]
+LANGS = [("es", "Español"), ("en", "English")]
+
+
+def _t(options):
+    from .i18n import tr as _tr
+    return [(v, _tr(l)) for v, l in options]
 
 
 class SettingsWindow(GlassWindow):
     changed = Signal()
 
     def __init__(self, settings: Settings):
-        super().__init__("Settings", size=(520, 470))
+        from .i18n import tr
+        super().__init__(tr("Settings"), size=(520, 500))
         self.s = settings
         grid = QGridLayout()
         grid.setHorizontalSpacing(14)
@@ -137,23 +148,29 @@ class SettingsWindow(GlassWindow):
             c.setCurrentIndex(idx)
             return c
 
-        grid.addWidget(QLabel("Open the menu with"), r, 0)
+        grid.addWidget(QLabel(tr("Language")), r, 0)
+        self.lang = combo(LANGS, self.s.get("lang"))
+        self.lang.currentIndexChanged.connect(lambda _: self._save("lang", self.lang.currentData()))
+        grid.addWidget(self.lang, r, 1)
+        r += 1
+
+        grid.addWidget(QLabel(tr("Open the menu with")), r, 0)
         self.trigger = combo(TRIGGERS, self.s.get("trigger"))
         self.trigger.currentIndexChanged.connect(lambda _: self._save("trigger", self.trigger.currentData()))
         grid.addWidget(self.trigger, r, 1)
         r += 1
-        hint = QLabel("…pressed while you’re dragging a file")
+        hint = QLabel(tr("…pressed while you’re dragging a file"))
         hint.setObjectName("dim")
         grid.addWidget(hint, r, 1)
         r += 1
 
-        grid.addWidget(QLabel("Save results"), r, 0)
-        self.output = combo(OUTPUTS, self.s.get("output"))
+        grid.addWidget(QLabel(tr("Save results")), r, 0)
+        self.output = combo(_t(OUTPUTS), self.s.get("output"))
         self.output.currentIndexChanged.connect(lambda _: self._save("output", self.output.currentData()))
         grid.addWidget(self.output, r, 1)
         r += 1
 
-        grid.addWidget(QLabel("JPG / WebP quality"), r, 0)
+        grid.addWidget(QLabel(tr("JPG / WebP quality")), r, 0)
         row = QHBoxLayout()
         self.q = QSlider(Qt.Horizontal)
         self.q.setRange(60, 100)
@@ -167,52 +184,52 @@ class SettingsWindow(GlassWindow):
         grid.addLayout(row, r, 1)
         r += 1
 
-        grid.addWidget(QLabel("PDF → image resolution"), r, 0)
-        self.dpi = combo(DPIS, self.s.get("pdf_dpi"))
+        grid.addWidget(QLabel(tr("PDF → image resolution")), r, 0)
+        self.dpi = combo(_t(DPIS), self.s.get("pdf_dpi"))
         self.dpi.currentIndexChanged.connect(lambda _: self._save("pdf_dpi", self.dpi.currentData()))
         grid.addWidget(self.dpi, r, 1)
         r += 1
 
-        grid.addWidget(QLabel("Toast duration"), r, 0)
+        grid.addWidget(QLabel(tr("Toast duration")), r, 0)
         self.toast = combo([(4000, "4 s"), (6500, "6.5 s"), (10000, "10 s")], self.s.get("toast_ms"))
         self.toast.currentIndexChanged.connect(lambda _: self._save("toast_ms", self.toast.currentData()))
         grid.addWidget(self.toast, r, 1)
         r += 1
 
-        grid.addWidget(QLabel("Hub ring delay"), r, 0)
-        self.hub = combo([(250, "Fast"), (420, "Default"), (700, "Slow")], self.s.get("hub_ms"))
+        grid.addWidget(QLabel(tr("Hub ring delay")), r, 0)
+        self.hub = combo([(250, tr("Fast")), (420, tr("Default")), (700, tr("Slow"))], self.s.get("hub_ms"))
         self.hub.currentIndexChanged.connect(lambda _: self._save("hub_ms", self.hub.currentData()))
         grid.addWidget(self.hub, r, 1)
         r += 1
 
-        self.hc = QCheckBox("High contrast menu text")
+        self.hc = QCheckBox(tr("High contrast menu text"))
         self.hc.setChecked(bool(self.s.get("high_contrast")))
         self.hc.toggled.connect(lambda v: self._save("high_contrast", bool(v)))
         grid.addWidget(self.hc, r, 1)
         r += 1
 
-        grid.addWidget(QLabel("Menu text size"), r, 0)
-        self.fs = combo([(90, "Small"), (100, "Default"), (120, "Large")], self.s.get("font_scale"))
+        grid.addWidget(QLabel(tr("Menu text size")), r, 0)
+        self.fs = combo([(90, tr("Small")), (100, tr("Default")), (120, tr("Large"))], self.s.get("font_scale"))
         self.fs.currentIndexChanged.connect(lambda _: self._save("font_scale", self.fs.currentData()))
         grid.addWidget(self.fs, r, 1)
         r += 1
 
-        grid.addWidget(QLabel("Background removal"), r, 0)
+        grid.addWidget(QLabel(tr("Background removal")), r, 0)
         try:
             from . import bgremove as _bg
             _st, _msg = _bg.ai_status()
-            _ai_label = "AI u2net (ready ✓)" if _st == "ready" else "AI u2net (auto-downloads once)"
+            _ai_label = tr("AI u2net (ready ✓)") if _st == "ready" else tr("AI u2net (auto-downloads once)")
         except Exception:
-            _ai_label = "AI u2net (auto-downloads once)"
-        self.bgm = combo([("solid", "Solid (instant)"), ("ai", _ai_label)],
+            _ai_label = tr("AI u2net (auto-downloads once)")
+        self.bgm = combo([("solid", tr("Solid (instant)")), ("ai", _ai_label)],
                          self.s.get("bg_mode"))
         self.bgm.currentIndexChanged.connect(lambda _: self._save("bg_mode", self.bgm.currentData()))
         grid.addWidget(self.bgm, r, 1)
         r += 1
 
-        grid.addWidget(QLabel("Watch folder"), r, 0)
+        grid.addWidget(QLabel(tr("Watch folder")), r, 0)
         wrow = QHBoxLayout()
-        self.hot = QCheckBox("Auto-convert new files")
+        self.hot = QCheckBox(tr("Auto-convert new files"))
         self.hot.setChecked(bool(self.s.get("hot_enable")))
         self.hot.toggled.connect(lambda v: self._save("hot_enable", bool(v)))
         wrow.addWidget(self.hot)
@@ -227,14 +244,20 @@ class SettingsWindow(GlassWindow):
         grid.addLayout(wrow, r, 1)
         r += 1
 
-        opt_btn = QPushButton("Opcionales: motores descargables…")
+        opt_btn = QPushButton(tr("Opcionales: motores descargables…"))
         opt_btn.setToolTip("FFmpeg, IA, Pandoc, LibreOffice: estado, instalar, quitar")
         opt_btn.clicked.connect(lambda: self._open_engines())
         grid.addWidget(opt_btn, r, 1)
         r += 1
 
+        self.upd = QCheckBox(tr("Check for updates daily (GitHub)"))
+        self.upd.setChecked(bool(self.s.get("update_check")))
+        self.upd.toggled.connect(lambda v: self._save("update_check", bool(v)))
+        grid.addWidget(self.upd, r, 1)
+        r += 1
+
         if IS_WIN or IS_MAC or IS_LINUX:
-            self.auto = QCheckBox("Start DragShift with Windows" if IS_WIN else "Open DragShift at login")
+            self.auto = QCheckBox(tr("Start DragShift with Windows") if IS_WIN else tr("Open DragShift at login"))
             self.auto.setChecked(autostart_enabled())
             self.auto.toggled.connect(set_autostart)
             grid.addWidget(self.auto, r, 1)
@@ -242,19 +265,19 @@ class SettingsWindow(GlassWindow):
         if IS_MAC:
             from . import platform_mac
             if not platform_mac.has_screen_recording():
-                glass_btn = QPushButton("Enable full liquid glass…")
-                glass_btn.setToolTip("Lets the glass refract the windows behind it (Screen Recording permission)")
+                glass_btn = QPushButton(tr("Enable full liquid glass…"))
+                glass_btn.setToolTip(tr("Lets the glass refract the windows behind it (Screen Recording permission)"))
                 glass_btn.clicked.connect(platform_mac.request_screen_recording)
                 grid.addWidget(glass_btn, r, 1)
                 r += 1
         self.body.addLayout(grid)
         self.body.addStretch(1)
-        about = QLabel(f"DragShift {__version__}  ·  originals are never modified")
+        about = QLabel(f"DragShift {__version__}  ·  {tr('originals are never modified')}")
         about.setObjectName("dim")
         foot = QHBoxLayout()
         foot.addWidget(about)
         foot.addStretch(1)
-        done = QPushButton("Done")
+        done = QPushButton(tr("Done"))
         done.setObjectName("primary")
         done.clicked.connect(self.close)
         foot.addWidget(done)
@@ -288,6 +311,8 @@ class EnginesWindow(GlassWindow):
     def __init__(self):
         super().__init__("Motores opcionales", size=(620, 460))
         from . import engines as _eng
+        self._eng = _eng
+        self._rows: dict = {}
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(10)
@@ -299,10 +324,12 @@ class EnginesWindow(GlassWindow):
                 state, detail = "missing", ""
             name = QLabel(f"<b>{e.name}</b> <i>({e.kind}, {e.size})</i>")
             name.setWordWrap(True)
-            grid.addWidget(name, r, 0)
-            st = QLabel("✓ listo" if state == "ready" else "○ no instalado")
+            grid.addWidget(grid.addWidget(name, r, 0) or name, r, 0) if False else grid.addWidget(name, r, 0)
+            from .i18n import tr as _tr
+            st = QLabel(_tr("✓ listo") if state == "ready" else _tr("○ no instalado"))
             st.setObjectName("dim" if state != "ready" else "good")
             grid.addWidget(st, r, 1)
+            self._rows[e.id] = (st, info)
             r += 1
             info = QLabel((e.desc + " " + (detail or e.note or "")).strip())
             info.setObjectName("dim")
@@ -310,19 +337,20 @@ class EnginesWindow(GlassWindow):
             grid.addWidget(info, r, 0, 1, 2)
             r += 1
             row = QHBoxLayout()
+            from .i18n import tr as _tr2
             if e.id == "pandoc":
-                b = QPushButton("Descargar e instalar")
+                b = QPushButton(_tr2("Descargar e instalar"))
                 b.clicked.connect(lambda _=False, b=b: self._install_pandoc(b))
                 row.addWidget(b)
             elif e.id == "ai-bg":
-                b = QPushButton("Descargar modelo IA (~176 MB)")
+                b = QPushButton(_tr2("Descargar modelo IA (~176 MB)"))
                 b.clicked.connect(lambda _=False, b=b: self._install_ai(b))
                 row.addWidget(b)
             elif e.id == "libreoffice":
-                b = QPushButton("Descargar e instalar (~400 MB)")
+                b = QPushButton(_tr2("Descargar e instalar (~400 MB)"))
                 b.clicked.connect(lambda _=False, b=b: self._install_lo(b))
                 row.addWidget(b)
-                b3 = QPushButton("Ya lo tengo…")
+                b3 = QPushButton(_tr2("Ya lo tengo…"))
                 b3.clicked.connect(self._locate_lo)
                 row.addWidget(b3)
             row.addStretch(1)
@@ -335,15 +363,33 @@ class EnginesWindow(GlassWindow):
         self.body.addStretch(1)
         foot = QHBoxLayout()
         foot.addStretch(1)
-        done = QPushButton("Cerrar")
+        from .i18n import tr as _trf
+        done = QPushButton(_trf("Cerrar"))
         done.setObjectName("primary")
         done.clicked.connect(self.close)
         foot.addWidget(done)
         self.body.addLayout(foot)
 
+    def _refresh_row(self, eid: str):
+        try:
+            from . import engines as _eng
+            for e in _eng.registry():
+                if e.id == eid and eid in self._rows:
+                    state, detail = _eng.status(e)
+                    from .i18n import tr as _tr4
+                    st, info = self._rows[eid]
+                    st.setText(_tr4("✓ listo") if state == "ready" else _tr4("○ no instalado"))
+                    st.setObjectName("dim" if state != "ready" else "good")
+                    st.style().unpolish(st)
+                    st.style().polish(st)
+                    info.setText((e.desc + " " + (detail or e.note or "")).strip())
+        except Exception:
+            pass
+
     def _install_pandoc(self, btn):
+        from .i18n import tr as _tr
         btn.setEnabled(False)
-        btn.setText("Descargando…")
+        btn.setText(_tr("Descargando…"))
         try:
             from . import engines as _eng
             import urllib.request
@@ -365,38 +411,41 @@ class EnginesWindow(GlassWindow):
             else:
                 with tarfile.open(tmp) as t:
                     t.extractall(dest, filter="data")
-            btn.setText("Instalado ✓ (reinicia)")
+            btn.setText(_tr("Instalado ✓ (reinicia)"))
+            self._refresh_row("pandoc")
         except Exception as e:
-            btn.setText("Reintentar")
+            btn.setText(_tr("Reintentar"))
             btn.setEnabled(True)
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Pandoc", f"No se pudo descargar:\n{e}")
+            QMessageBox.warning(self, "Pandoc", f"{_tr('No se pudo descargar:')}\n{e}")
 
     def _install_ai(self, btn):
+        from .i18n import tr as _tr
         btn.setEnabled(False)
-        btn.setText("Descargando… (~176 MB)")
+        btn.setText(_tr("Descargando… (~176 MB)"))
         try:
             from . import bgremove
             bgremove.ensure_onnxruntime()
             bgremove.ensure_model()
-            btn.setText("Instalado ✓")
+            btn.setText(_tr("Instalado ✓"))
+            self._refresh_row("ai-bg")
         except Exception as e:
-            btn.setText("Reintentar")
+            btn.setText(_tr("Reintentar"))
             btn.setEnabled(True)
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Modelo IA", str(e))
+            QMessageBox.warning(self, _tr("Modelo IA"), str(e))
 
     def _locate_lo(self):
+        from .i18n import tr as _tr
         from PySide6.QtWidgets import QFileDialog
-        d = QFileDialog.getExistingDirectory(self, "Carpeta de LibreOffice (program)")
+        d = QFileDialog.getExistingDirectory(self, _tr("Carpeta de LibreOffice (program)"))
         if d:
             from PySide6.QtWidgets import QMessageBox
-            import os as _os
             cand = Path(d) / ("soffice.exe" if sys.platform == "win32" else "soffice")
             if cand.exists():
-                QMessageBox.information(self, "LibreOffice", f"Detectado: {cand}\nYa puedes usar Convert → PDF en DOC/XLS/PPT.")
+                QMessageBox.information(self, "LibreOffice", f"{_tr('Detectado:')} {cand}\n{_tr('Ya puedes usar Convert → PDF en DOC/XLS/PPT.')}")
             else:
-                QMessageBox.warning(self, "LibreOffice", "No encontré soffice ahí.")
+                QMessageBox.warning(self, "LibreOffice", _tr("No encontré soffice ahí."))
 
     def _install_lo(self, btn):
         from PySide6.QtCore import QObject, QThread, Signal
@@ -414,12 +463,13 @@ class EnginesWindow(GlassWindow):
                     self.done.emit(e)
 
         btn.setEnabled(False)
-        btn.setText("Descargando MSI…")
+        from .i18n import tr as _trb
+        btn.setText(_trb("Descargando MSI…"))
         self._lo_thread = QThread(self)
         self._lo_worker = _Worker()
         self._lo_worker.moveToThread(self._lo_thread)
         self._lo_thread.started.connect(self._lo_worker.run)
-        self._lo_worker.prog.connect(lambda p: btn.setText(f"Descargando… {p}%"))
+        self._lo_worker.prog.connect(lambda p: btn.setText(f"{_trb('Descargando…')} {p}%"))
         self._lo_worker.done.connect(lambda e: self._lo_done(btn, e))
         self._lo_thread.start()
 
@@ -430,11 +480,13 @@ class EnginesWindow(GlassWindow):
         except Exception:
             pass
         from PySide6.QtWidgets import QMessageBox
+        from .i18n import tr as _tr
         if err is None:
-            btn.setText("Instalado ✓ (reinicia)")
-            QMessageBox.information(self, "LibreOffice", "Listo. Ya puedes usar Convert → PDF en DOC/XLS/PPT/ODT.")
+            btn.setText(_tr("Instalado ✓ (reinicia)"))
+            self._refresh_row("libreoffice")
+            QMessageBox.information(self, "LibreOffice", _tr("Listo. Ya puedes usar Convert → PDF en DOC/XLS/PPT/ODT."))
         else:
-            btn.setText("Reintentar")
+            btn.setText(_tr("Reintentar"))
             btn.setEnabled(True)
             QMessageBox.warning(self, "LibreOffice", str(err))
 
@@ -446,14 +498,15 @@ class EnginesWindow(GlassWindow):
 
 class WelcomeWindow(GlassWindow):
     def __init__(self, settings: Settings, trigger_label: str = "Shift"):
-        super().__init__("Welcome to DragShift", size=(560, 430))
+        from .i18n import tr
+        super().__init__(tr("Welcome to DragShift"), size=(560, 430))
         self.s = settings
         steps = [
-            ("1", "Start dragging any file", "in Finder or on the desktop" if IS_MAC else
+            ("1", tr("Start dragging any file"), "in Finder or on the desktop" if IS_MAC else
              "in your file manager (Thunar, Nautilus…)" if IS_LINUX else "in File Explorer or on the desktop"),
-            ("2", f"Press {trigger_label}", "the glass menu opens right under your cursor"),
-            ("3", "Drop it on a slice", "the result is saved next to the original"),
-            ("⇄", f"Tap {trigger_label} again", "to switch between Convert and Tools"),
+            ("2", f"{tr('Press')} {trigger_label}", tr("the glass menu opens right under your cursor")),
+            ("3", tr("Drop it on a slice"), tr("the result is saved next to the original")),
+            ("⇄", f"{tr('Tap')} {trigger_label} {tr('again')}", tr("to switch between Convert and Tools")),
         ]
         for n, head, sub in steps:
             row = QHBoxLayout()
@@ -496,11 +549,12 @@ class WelcomeWindow(GlassWindow):
                 self.body.addWidget(note)
         foot = QHBoxLayout()
         if IS_WIN or IS_MAC or IS_LINUX:
-            self.auto = QCheckBox("Start with Windows" if IS_WIN else "Open at login")
+            from .i18n import tr as _trw
+            self.auto = QCheckBox(_trw("Start with Windows") if IS_WIN else _trw("Open at login"))
             self.auto.setChecked(True)
             foot.addWidget(self.auto)
         foot.addStretch(1)
-        ok = QPushButton("Got it")
+        ok = QPushButton(tr("Got it"))
         ok.setObjectName("primary")
         ok.clicked.connect(self._done)
         foot.addWidget(ok)

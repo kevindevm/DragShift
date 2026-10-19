@@ -99,8 +99,9 @@ class ToastCard(QWidget):
 
     # ------------------------------------------------------------ state
     def working(self, title: str, detail: str = ""):
-        self.state, self.title, self.detail = "working", title, detail
-        self._base_detail = detail
+        from .i18n import tr as _tr
+        self.state, self.title, self.detail = "working", _tr(title), _tr(detail)
+        self._base_detail = self.detail
         self.spinner.start()
         self.update()
 
@@ -110,6 +111,7 @@ class ToastCard(QWidget):
             self.update()
 
     def done(self, r: Result):
+        from .i18n import tr as _tr
         self.spinner.stop()
         if hasattr(self, "_ticker") and self._ticker is not None:
             try:
@@ -117,7 +119,7 @@ class ToastCard(QWidget):
             except Exception:
                 pass
         self.state, self.result = "done", r
-        self.title, self.detail, self.good = r.title, r.detail, r.good
+        self.title, self.detail, self.good = _tr(r.title), _tr(r.detail), _tr(r.good)
         self.thumb = None
         if r.thumb is not None:
             pm = QPixmap(str(r.thumb))
@@ -131,14 +133,16 @@ class ToastCard(QWidget):
         self.update()
 
     def error(self, title: str, detail: str):
+        from .i18n import tr as _tr
         self.spinner.stop()
-        self.state, self.title, self.detail = "error", title, detail
+        self.state, self.title, self.detail = "error", _tr(title), _tr(detail)
         self.life.start(9000)
         self.update()
 
     def info(self, title: str, detail: str, ms: int = 4500):
+        from .i18n import tr as _tr
         self.spinner.stop()
-        self.state, self.title, self.detail = "info", title, detail
+        self.state, self.title, self.detail = "info", _tr(title), _tr(detail)
         self.life.start(ms)
         self.update()
 

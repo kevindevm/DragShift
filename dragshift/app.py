@@ -22,7 +22,9 @@ from .trigger import DragShiftWatcher
 from .util import UserError, category, file_size, human_size, keep, release
 
 APP_NAME = "DragShift"
-TIP_URL = "https://cash.app/$AtikaKadesha"
+TIP_PAYPAL = "https://paypal.me/KevinLamarque"
+TIP_COFFEE = "https://buymeacoffee.com/kevindevm"
+TIP_CASHAPP = "https://cash.app/$AtikaKadesha"
 VERSION = __version__
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
@@ -70,6 +72,16 @@ FORMAT_HINTS = {"JPG": "Small, universal", "PNG": "Lossless · transparency", "W
 
 IMAGE_TOOLS = ["Compress", "Resize", "Crop", "Edit", "Annotate", "Redact", "Add BG", "Metadata",
                "Remove BG", "Watermark"]
+
+
+def _h(n: str, default: str = "") -> str:
+    from .i18n import tr
+    return tr(HINTS.get(n, default))
+
+
+def _fh(t: str) -> str:
+    from .i18n import tr
+    return tr(FORMAT_HINTS.get(t, ""))
 PDF_TOOLS = ["Compress", "Split", "Rotate", "Protect", "Extract", "Metadata"]
 AUDIO_TOOLS = ["Voice", "Sample", "CleanTags", "Loud", "Trim"]
 VIDEO_TOOLS = ["Voice", "Sample", "CleanTags", "Mute", "Subs", "Loud", "Trim"]
@@ -219,7 +231,8 @@ class DragShiftApp(QObject):
         self.server.newConnection.connect(self._ipc)
 
         self.tray = QSystemTrayIcon(make_tray_icon(), self)
-        self.tray.setToolTip(f"{APP_NAME} — press {self.trigger_label()} while dragging a file")
+        from .i18n import tr as _trm
+        self.tray.setToolTip(f"{APP_NAME} — {_trm('press')} {self.trigger_label()} {_trm('while dragging a file')}")
         try:
             from . import watch as _watch
             self.hotfolder = _watch.HotFolder(self.settings, self.submit)
@@ -227,16 +240,16 @@ class DragShiftApp(QObject):
             self.hotfolder = None
         m = QMenu()
         m.setStyleSheet(glass.QSS)
-        self.act_enabled = QAction("Enabled", m, checkable=True, checked=True)
+        self.act_enabled = QAction(_trm("Enabled"), m, checkable=True, checked=True)
         self.act_enabled.toggled.connect(lambda on: setattr(self.watcher, "enabled", on))
         m.addAction(self.act_enabled)
-        m.addAction("Open a file…", self.open_dialog)
+        m.addAction(_trm("Open a file…"), self.open_dialog)
         m.addSeparator()
         try:
             from . import history as _history
             recent = _history.recent(8)
             if recent:
-                rm = m.addMenu("Recent")
+                rm = m.addMenu(_trm("Recent"))
                 for ts, action, outs in recent:
                     outs_list = [o for o in outs.split("\n") if o]
                     label = f"{action} · {Path(outs_list[0]).name}" if outs_list else action
@@ -244,15 +257,19 @@ class DragShiftApp(QObject):
                                  lambda o=outs_list: self._open_recent(o))
         except Exception:
             pass
-        m.addAction("Settings…", self.open_settings)
-        m.addAction("How to use", self.show_welcome)
-        m.addAction("Tip the developer ♥", lambda: QDesktopServices.openUrl(QUrl(TIP_URL)))
+        m.addAction(_trm("Settings…"), self.open_settings)
+        m.addAction(_trm("How to use"), self.show_welcome)
+        tip = m.addMenu(_trm("Tip the developer ♥"))
+        tip.addAction("PayPal", lambda: QDesktopServices.openUrl(QUrl(TIP_PAYPAL)))
+        tip.addAction(_trm("Buy me a coffee"), lambda: QDesktopServices.openUrl(QUrl(TIP_COFFEE)))
+        tip.addSeparator()
+        tip.addAction(_trm("Cash App (secondary)"), lambda: QDesktopServices.openUrl(QUrl(TIP_CASHAPP)))
         m.addSeparator()
-        m.addAction("Backup settings…", self._backup_settings)
-        m.addAction("Restore settings…", self._restore_settings)
-        m.addAction("Check for updates…", self._check_updates)
+        m.addAction(_trm("Backup settings…"), self._backup_settings)
+        m.addAction(_trm("Restore settings…"), self._restore_settings)
+        m.addAction(_trm("Check for updates…"), self._check_updates)
         m.addSeparator()
-        m.addAction(f"Quit {APP_NAME}", self.qapp.quit)
+        m.addAction(f"{_trm('Quit DragShift')}", self.qapp.quit)
         self.tray_menu = m
         self.tray.setContextMenu(m)
         self.tray.activated.connect(self._tray_click)
@@ -312,8 +329,9 @@ class DragShiftApp(QObject):
     # ------------------------------------------------------------ menu contents
     def describe(self, paths: list[str]) -> str:
         from .util import CONFIG
-        base = f"{len(paths)} files" if len(paths) > 1 else human_size(file_size(paths[0]))
-        dest = "→ DragShift/" if CONFIG.get("output") == "folder" else "→ junto al original"
+        from .i18n import tr as _trd
+        base = f"{len(paths)} {_trd('files')}" if len(paths) > 1 else human_size(file_size(paths[0]))
+        dest = f"→ DragShift/" if CONFIG.get("output") == "folder" else _trd("→ next to the original")
         cat = category(paths[0]) if paths else None
         return f"{base} · {cat or '?'} · {dest}"
 
@@ -323,15 +341,15 @@ class DragShiftApp(QObject):
             if len(paths) >= 1:
                 # universal ZIP works for anything, even unsupported mixes
                 return {"Convert": [],
-                        "Tools": [Item("ZIP", GLYPHS["ZIP"], key="tool:ZIP", hint=HINTS["ZIP"]),
-                                  Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=HINTS["Hash"]),
-                                  Item("B64", GLYPHS["B64"], key="tool:B64", hint=HINTS["B64"])]}
+                        "Tools": [Item("ZIP", GLYPHS["ZIP"], key="tool:ZIP", hint=_h("ZIP")),
+                                  Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=_h("Hash")),
+                                  Item("B64", GLYPHS["B64"], key="tool:B64", hint=_h("B64"))]}
             return {"Unsupported": []}
         ext = Path(paths[0]).suffix
         same = [p for p in paths if category(p) == cat]
         convert_items = []
         for t in convert.targets_for(cat, ext):
-            hint = FORMAT_HINTS.get(t, "")
+            hint = _fh(t)
             if cat == "image" and t == "PDF" and len(same) > 1:
                 hint = f"{len(same)} images → 1 PDF"
             convert_items.append(Item(t, key=f"convert:{t}", hint=hint))
@@ -340,40 +358,40 @@ class DragShiftApp(QObject):
             names = list(IMAGE_TOOLS)
             if len(same) > 1:
                 names += ["Contact", "GIF"]
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n))
                               for n in names]
         elif cat == "pdf":
             names = PDF_TOOLS[:3] + (["Merge"] if len(same) > 1 else []) + PDF_TOOLS[3:]
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n))
                               for n in names]
         elif cat in ("text", "docx"):
             names = text_tools_for(paths[0])
             if names:
-                rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+                rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n))
                                   for n in names]
         elif cat == "audio":
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n))
                               for n in AUDIO_TOOLS]
         elif cat == "video":
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n))
                               for n in VIDEO_TOOLS]
         elif cat == "subtitle":
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Shift ±s" if n == "Shift" else "Merge subs"))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n, "Shift ±s" if n == "Shift" else "Merge subs"))
                               for n in SUBTITLE_TOOLS]
         elif cat == "notebook":
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n))
                               for n in NOTEBOOK_TOOLS]
         elif cat == "email":
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Save attachments"))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n, "Save attachments"))
                               for n in EMAIL_TOOLS]
         elif cat == "contact":
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Merge cards"))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n, "Merge cards"))
                               for n in CONTACT_TOOLS]
         elif cat == "font":
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "Specimen sheet"))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n, "Specimen sheet"))
                               for n in FONT_TOOLS]
         elif cat == "archive":
-            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, "List contents"))
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=_h(n, "List contents"))
                               for n in ARCHIVE_TOOLS]
         elif cat == "legacy":
             from . import engines as _eng
@@ -392,30 +410,30 @@ class DragShiftApp(QObject):
         if len(paths) > 1 and len(same) == len(paths):
             if cat in ("image", "pdf", "text", "sheet", "presentation"):
                 extras.append(Item("Portfolio", GLYPHS["Portfolio"], key="tool:Portfolio",
-                                   hint=HINTS["Portfolio"]))
+                                   hint=_h("Portfolio")))
             if len(paths) == 2 and cat == "text":
-                extras.append(Item("Diff", GLYPHS["Diff"], key="tool:Diff", hint=HINTS["Diff"]))
+                extras.append(Item("Diff", GLYPHS["Diff"], key="tool:Diff", hint=_h("Diff")))
             if cat in ("audio", "video"):
                 extras.append(Item("Playlist", GLYPHS["Playlist"], key="tool:Playlist",
-                                   hint=HINTS["Playlist"]))
+                                   hint=_h("Playlist")))
                 if len({Path(p).suffix.lower() for p in same}) == 1:
                     extras.append(Item("Join", GLYPHS["Join"], key="tool:Join",
-                                       hint=HINTS["Join"]))
+                                       hint=_h("Join")))
         if len(paths) > 1 or cat in ("sheet", "presentation", "ebook"):
-            extras += [Item("ZIP", GLYPHS["ZIP"], key="tool:ZIP", hint=HINTS["ZIP"]),
-                       Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=HINTS["Hash"])]
+            extras += [Item("ZIP", GLYPHS["ZIP"], key="tool:ZIP", hint=_h("ZIP")),
+                       Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=_h("Hash"))]
             if cat in ("image", "audio", "video", "text") and len(paths) > 1:
                 extras.append(Item("Duplicates", "⧉", key="tool:Duplicates",
                                    hint="Find duplicates"))
         if cat == "image" and len(paths) == 1:
             extras.append(Item("Palette", "🎨", key="tool:Palette", hint="Color palette"))
-            extras.append(Item("Favicon", GLYPHS["Favicon"], key="tool:Favicon", hint=HINTS["Favicon"]))
+            extras.append(Item("Favicon", GLYPHS["Favicon"], key="tool:Favicon", hint=_h("Favicon")))
         if cat == "image" and len(same) == 2:
             extras.append(Item("VisualDiff", GLYPHS["VisualDiff"], key="tool:VisualDiff",
-                               hint=HINTS["VisualDiff"]))
+                               hint=_h("VisualDiff")))
         if cat == "video" and len(paths) == 1:
             extras.append(Item("Storyboard", GLYPHS["Storyboard"], key="tool:Storyboard",
-                               hint=HINTS["Storyboard"]))
+                               hint=_h("Storyboard")))
         if cat == "pdf":
             extras.append(Item("Outline", "🗂", key="tool:Outline", hint="Extract outline"))
         if extras:
@@ -452,8 +470,9 @@ class DragShiftApp(QObject):
                     try:
                         import pyminizip  # noqa: F401
                         from PySide6.QtWidgets import QInputDialog
-                        text, ok = QInputDialog.getText(None, "ZIP bundle",
-                                                       "Password (empty = no password):",
+                        from .i18n import tr as _trd2
+                        text, ok = QInputDialog.getText(None, _trd2("ZIP bundle"),
+                                                       _trd2("Password (empty = no password):"),
                                                        echo=QInputDialog.Password)
                         if not ok:
                             return
@@ -596,8 +615,9 @@ class DragShiftApp(QObject):
                 elif name == "Trim":
                     try:
                         from PySide6.QtWidgets import QInputDialog
-                        text, ok = QInputDialog.getText(None, "Trim media",
-                                                       "Start-End seconds (e.g. 5-20):")
+                        from .i18n import tr as _trd3
+                        text, ok = QInputDialog.getText(None, _trd3("Trim media"),
+                                                       _trd3("Start-End seconds (e.g. 5-20):"))
                         if not ok or "-" not in text:
                             return
                         a, b = text.split("-", 1)
@@ -811,12 +831,17 @@ class DragShiftApp(QObject):
 
     # ------------------------------------------------------------ misc
     def _tray_click(self, reason):
-        # macOS: a click on the menu-bar icon shows the menu; Windows: click opens a file
-        if not IS_MAC and reason in (QSystemTrayIcon.DoubleClick, QSystemTrayIcon.Trigger):
+        # double-click opens Settings; single click opens a file (Windows)
+        if IS_MAC:
+            return  # macOS: the menu-bar click shows the menu
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.open_settings()
+        elif reason == QSystemTrayIcon.Trigger:
             self.open_dialog()
 
     def open_dialog(self):
-        files, _ = QFileDialog.getOpenFileNames(None, "Choose file(s) for DragShift", QDir.homePath())
+        from .i18n import tr as _trd
+        files, _ = QFileDialog.getOpenFileNames(None, _trd("Choose file(s) for DragShift"), QDir.homePath())
         if files:
             self.show_click_menu(files)
 
@@ -864,8 +889,9 @@ class DragShiftApp(QObject):
         self.toasts.error("Recent", "That file was moved or deleted.")
 
     def _settings_changed(self):
+        from .i18n import tr as _trs
         self.watcher.set_key(self.settings.get("trigger"))
-        self.tray.setToolTip(f"{APP_NAME} — press {self.trigger_label()} while dragging a file")
+        self.tray.setToolTip(f"{APP_NAME} — {_trs('press')} {self.trigger_label()} {_trs('while dragging a file')}")
         try:
             if getattr(self, "hotfolder", None) is not None:
                 on = bool(self.settings.get("hot_enable")) and bool(str(self.settings.get("hot_src") or ""))
@@ -878,7 +904,15 @@ class DragShiftApp(QObject):
 
     def _check_updates(self, auto: bool = False):
         try:
+            import datetime as _dt
             from . import updater
+            if auto:
+                if not bool(self.settings.get("update_check")):
+                    return
+                today = _dt.date.today().isoformat()
+                if str(self.settings.get("last_update_check") or "") == today:
+                    return  # once per day
+                self.settings.set("last_update_check", today)
             newer, tag, url = updater.check()
             if newer:
                 if auto:

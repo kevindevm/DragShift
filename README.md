@@ -101,9 +101,13 @@ Every push runs these jobs on GitHub's Windows, Mac and Linux machines:
 
 ## Support
 
-DragShift is free. If it saves you time, you can leave a tip on Cash App: [**$AtikaKadesha**](https://cash.app/$AtikaKadesha). Thank you!
+DragShift is free, by **kevindevm**. If it saves you time, you can leave a tip:
 
-<img src="docs/tip-cashapp.png" alt="Cash App QR code for $AtikaKadesha" width="220">
+- **PayPal:** [paypal.me/KevinLamarque](https://paypal.me/KevinLamarque)
+- **Buy me a coffee:** [buymeacoffee.com/kevindevm](https://buymeacoffee.com/kevindevm)
+- Secondary, Cash App: [**$AtikaKadesha**](https://cash.app/$AtikaKadesha)
+
+Thank you!
 
 ## License
 
