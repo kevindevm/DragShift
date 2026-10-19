@@ -4,12 +4,21 @@ from __future__ import annotations
 from pathlib import Path
 
 from .convert import open_image
-from .util import sibling, unique_path
+from .util import UserError, sibling
+
+
+def _need_images(srcs: list[str | Path], minimum: int = 2) -> list[str]:
+    if not srcs:
+        raise UserError("Select at least 2 images.")
+    if len(srcs) < minimum:
+        raise UserError(f"Select at least {minimum} images.")
+    return [str(s) for s in srcs]
 
 
 def contact_sheet(srcs: list[str | Path], thumb: int = 400) -> Path:
     from PIL import Image
     import math
+    srcs = _need_images(srcs)
     ims = []
     for s in srcs:
         im = open_image(s).convert("RGB")
@@ -28,6 +37,7 @@ def contact_sheet(srcs: list[str | Path], thumb: int = 400) -> Path:
 
 def images_to_gif(srcs: list[str | Path]) -> Path:
     from PIL import Image
+    srcs = _need_images(srcs)
     frames = []
     for s in srcs[:30]:
         im = open_image(s).convert("RGB")

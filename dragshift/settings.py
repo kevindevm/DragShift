@@ -21,6 +21,10 @@ DEFAULTS = {
     "output": "next",
     "jpg_quality": 90,
     "pdf_dpi": 200,
+    "audio_bitrate": "192k",
+    "video_crf": 23,
+    "thumb_sec": 1,
+    "mru": {},
     "trigger": "shift",
     "welcomed": False,
 }
@@ -47,7 +51,7 @@ class Settings:
         self.apply()
 
     def apply(self):
-        for k in ("output", "jpg_quality", "pdf_dpi"):
+        for k in ("output", "jpg_quality", "pdf_dpi", "audio_bitrate", "video_crf", "thumb_sec"):
             CONFIG[k] = self.get(k)
 
 

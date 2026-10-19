@@ -4,14 +4,22 @@ from PyInstaller.utils.hooks import collect_all
 
 onefile = os.environ.get("ONEFILE") == "1"
 heif_datas, heif_bins, heif_hidden = collect_all("pillow_heif")
+try:
+    from imageio_ffmpeg import get_ffmpeg_exe
+    _ff = get_ffmpeg_exe()
+    ff_bins = [(_ff, ".")]
+except Exception:
+    ff_bins = []
 
 a = Analysis(
     ["run.py"],
     datas=[("dragshift/assets", "dragshift/assets")] + heif_datas,
-    binaries=heif_bins,
+    binaries=heif_bins + ff_bins,
     hiddenimports=["win32com.client", "PySide6.QtNetwork", "AppKit", "Quartz", "objc",
                    "imageio_ffmpeg", "mutagen", "openpyxl", "yaml", "odf", "pptx",
-                   "ebooklib", "bs4", "lxml", "qrcode", "cryptography"] + heif_hidden,
+                   "ebooklib", "bs4", "lxml", "qrcode", "cryptography",
+                   "docx", "docx.enum.text", "docx.shared", "fitz", "pymupdf",
+                   "soupsieve", "tomli"] + heif_hidden,
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtQml",
               "PySide6.QtQuick", "PySide6.Qt3DCore", "PySide6.QtMultimedia", "PySide6.QtCharts",
               "PySide6.QtDataVisualization", "PySide6.QtPdf", "pandas", "PySide6.QtSql", "PySide6.QtTest",
@@ -19,10 +27,10 @@ a = Analysis(
 )
 
 DROP = ("Qt6Quick", "Qt6Qml", "Qt6Pdf", "Qt6WebEngine", "Qt63D", "Qt6Multimedia", "Qt6Charts",
-        "Qt6VirtualKeyboard", "Qt6Designer", "Qt6ShaderTools", "Qt6Sql", "Qt6Test", "opengl32sw",
-        "Qt6OpenGL", "Qt6DataVisualization", "Qt6Positioning", "Qt6Sensors", "Qt6SerialPort",
+        "Qt6VirtualKeyboard", "Qt6Designer", "Qt6ShaderTools", "Qt6Sql", "Qt6Test",
+        "Qt6DataVisualization", "Qt6Positioning", "Qt6Sensors", "Qt6SerialPort",
         "Qt6Bluetooth", "Qt6Nfc", "Qt6RemoteObjects", "Qt6Scxml", "Qt6SpatialAudio", "Qt6TextToSpeech",
-        "Qt6WebChannel", "Qt6WebSockets", "Qt6Svg", "qtquick", "qml",
+        "Qt6WebChannel", "Qt6WebSockets", "qtquick", "qml",
         "libgtk-3", "libgdk-3", "libqgtk3", "libatk-")
 a.binaries = [b for b in a.binaries if not any(d.lower() in b[0].lower() for d in DROP)]
 a.datas = [d for d in a.datas if "translations" not in d[0].replace("\\", "/")]

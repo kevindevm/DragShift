@@ -71,7 +71,7 @@ def split_file(src: str | Path, part_size: int = PART_SIZE) -> list[Path]:
             if not chunk:
                 break
             i += 1
-            out = Path(str(sibling(src, f"part{i:03d}", ".part"))).with_suffix(f".part{i:03d}")
+            out = sibling(src, f"part{i:03d}", f".part{i:03d}")
             out.write_bytes(chunk)
             outs.append(out)
     if not outs:
@@ -81,12 +81,11 @@ def split_file(src: str | Path, part_size: int = PART_SIZE) -> list[Path]:
 
 def join_parts(srcs: list[str | Path]) -> Path:
     parts = sorted(srcs, key=lambda s: str(s))
+    if not parts:
+        raise UserError("No parts given.")
     first = Path(parts[0])
-    stem = re.sub(r"\.part\d+$", "", first.name)
-    out = unique_path(first.with_name(stem + " joined" + first.suffix if first.suffix != ".part001" else stem + " joined"))
-    # simpler: strip .partNNN
     m = re.match(r"^(.*)\.part\d+$", first.name)
-    out = unique_path(first.with_name((m.group(1) if m else stem + " joined")))
+    out = unique_path(first.with_name(m.group(1) if m else first.stem + " joined"))
     with out.open("wb") as w:
         for p in parts:
             with open(p, "rb") as f:

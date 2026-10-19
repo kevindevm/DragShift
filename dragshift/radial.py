@@ -403,6 +403,12 @@ class RadialMenu(QWidget):
             self.close_menu()
         elif e.key() in (Qt.Key_Tab, Qt.Key_Shift):
             self.next_ring()
+        elif Qt.Key_1 <= e.key() <= Qt.Key_9:
+            i = e.key() - Qt.Key_1
+            if 0 <= i < len(self.items):
+                item, paths = self.items[i], list(self.paths)
+                self.hide()
+                QTimer.singleShot(0, lambda: self.activated.emit(item, paths))
 
     def leaveEvent(self, e):
         if self.click_mode:

@@ -43,6 +43,7 @@ def open_image(path: str | Path) -> Image.Image:
     im = Image.open(path)
     im.seek(0)
     im = ImageOps.exif_transpose(im)  # honour camera rotation
+    im.load()
     if im.mode in ("P", "LA", "PA"):
         im = im.convert("RGBA")
     elif im.mode not in ("RGB", "RGBA", "L"):
@@ -57,6 +58,7 @@ def open_preview(path: str | Path, max_side: int = 1400) -> Image.Image:
     if im.format == "JPEG":
         im.draft("RGB", (max_side, max_side))
     im = ImageOps.exif_transpose(im)
+    im.load()
     if im.mode in ("P", "LA", "PA"):
         im = im.convert("RGBA")
     elif im.mode not in ("RGB", "RGBA", "L"):
@@ -114,7 +116,7 @@ def atomic_save(write, out):
         write(out)  # in-memory buffer
         return
     out = Path(out)
-    tmp = out.with_name(f".~{out.name}.part")
+    tmp = out.with_name(f".~{out.name}.{os.getpid()}.part")
     try:
         write(tmp)
         os.replace(tmp, out)

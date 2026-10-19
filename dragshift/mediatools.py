@@ -15,7 +15,13 @@ VIDEO_TARGETS = ["MP4", "WEBM", "MKV", "MP3", "WAV", "GIF", "PNG"]
 
 
 def _ffmpeg() -> str:
+    import os
+    import sys
     try:
+        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+            bundled = os.path.join(sys._MEIPASS, "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg")
+            if os.path.exists(bundled):
+                return bundled
         from imageio_ffmpeg import get_ffmpeg_exe
         return get_ffmpeg_exe()
     except Exception as e:
@@ -32,15 +38,17 @@ def _run(args: list[str]) -> None:
 
 def audio_to(src: str | Path, target: str) -> list[Path]:
     target = target.upper()
+    from .util import CONFIG
+    bitrate = str(CONFIG.get("audio_bitrate", "192k"))
     ff = _ffmpeg()
     ext = "." + ("opus" if target == "OPUS" else target.lower())
     out = sibling(src, ext=ext)
-    codec = {"MP3": ["-c:a", "libmp3lame", "-b:a", "192k"],
+    codec = {"MP3": ["-c:a", "libmp3lame", "-b:a", bitrate],
              "WAV": ["-c:a", "pcm_s16le"],
-             "OGG": ["-c:a", "libvorbis", "-b:a", "160k"],
+             "OGG": ["-c:a", "libvorbis", "-b:a", bitrate],
              "OPUS": ["-c:a", "libopus", "-b:a", "96k"],
              "FLAC": ["-c:a", "flac"],
-             "M4A": ["-c:a", "aac", "-b:a", "192k"]}[target]
+             "M4A": ["-c:a", "aac", "-b:a", bitrate]}[target]
     _run([ff, "-y", "-i", str(src), "-vn", *codec, str(out)])
     return [out]
 
@@ -54,8 +62,10 @@ def audio_voice(src: str | Path) -> Path:
 
 
 def audio_sample(src: str | Path, seconds: int = 30) -> Path:
-    out = sibling(src, f"{seconds}s", Path(src).suffix.lower() or ".mp3")
-    _run([_ffmpeg(), "-y", "-i", str(src), "-t", str(seconds), "-c", "copy", str(out)])
+    # re-encode (never -c copy): cutting mp3/aac mid-frame corrupts the file
+    out = sibling(src, f"{seconds}s", ".mp3")
+    _run([_ffmpeg(), "-y", "-i", str(src), "-t", str(seconds),
+          "-vn", "-c:a", "libmp3lame", "-b:a", "128k", str(out)])
     return out
 
 
@@ -107,12 +117,16 @@ def video_to(src: str | Path, target: str) -> list[Path]:
             pass
         return [out]
     if target == "PNG":
+        from .util import CONFIG
         out = sibling(src, "Thumb", ".png")
-        _run([ff, "-y", "-ss", "1", "-i", str(src), "-vframes", "1", str(out)])
+        _run([ff, "-y", "-ss", str(CONFIG.get("thumb_sec", 1)), "-i", str(src),
+              "-vframes", "1", str(out)])
         return [out]
     out = sibling(src, ext="." + target.lower())
+    from .util import CONFIG
+    crf = str(CONFIG.get("video_crf", 23))
     if target == "MP4":
-        args = ["-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-c:a", "aac", "-b:a", "128k"]
+        args = ["-c:v", "libx264", "-crf", crf, "-preset", "veryfast", "-c:a", "aac", "-b:a", "128k"]
     elif target == "WEBM":
         args = ["-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-c:a", "libopus"]
     else:  # MKV
@@ -129,6 +143,12 @@ def video_compress(src: str | Path) -> Path:
 
 
 def video_mute(src: str | Path) -> Path:
-    out = sibling(src, "Muted", ".mp4")
-    _run([_ffmpeg(), "-y", "-i", str(src), "-an", "-c:v", "copy", str(out)])
+    # keep the source container: -c:v copy into .mp4 fails for VP9/WebM sources
+    ext = Path(src).suffix.lower() or ".mp4"
+    out = sibling(src, "Muted", ext)
+    if ext == ".mp4":
+        _run([_ffmpeg(), "-y", "-i", str(src), "-an", "-c:v", "copy", str(out)])
+    else:
+        _run([_ffmpeg(), "-y", "-i", str(src), "-an", "-c:v", "libx264",
+              "-crf", "23", "-preset", "veryfast", str(out)])
     return out

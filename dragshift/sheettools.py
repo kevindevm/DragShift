@@ -20,7 +20,10 @@ EBOOK_TARGETS = ["TXT", "HTML", "PDF", "DOCX"]
 
 
 def _rows_of_xlsx(src: str | Path) -> tuple[list[str], list[list]]:
-    from openpyxl import load_workbook
+    try:
+        from openpyxl import load_workbook
+    except Exception as e:
+        raise UserError(f"Excel support needs openpyxl: {e}")
     wb = load_workbook(src, read_only=True, data_only=True)
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
@@ -79,7 +82,10 @@ def ods_rows(src: str | Path) -> tuple[list[str], list[list]]:
 
 
 def csv_to_xlsx(src: str | Path) -> list[Path]:
-    from openpyxl import Workbook
+    try:
+        from openpyxl import Workbook
+    except Exception as e:
+        raise UserError(f"Excel support needs openpyxl: {e}")
     text = read_text(src)
     try:
         dialect = csv.Sniffer().sniff(text[:8000], delimiters=[",", ";", "\t", "|"])
@@ -111,7 +117,7 @@ def sqlite_to_csv(src: str | Path, table: str | None = None) -> list[Path]:
     table = table or tables[0]
     con = sqlite3.connect(str(src))
     try:
-        cur = con.execute(f'SELECT * FROM "{table}"')
+        cur = con.execute(f'SELECT * FROM "{table.replace(chr(34), chr(34)*2)}"')
         cols = [d[0] for d in cur.description]
         rows = cur.fetchall()
     finally:
@@ -175,7 +181,10 @@ def sheet_to_txt(src: str | Path) -> list[Path]:
 
 
 def present_to_txt(src: str | Path) -> list[Path]:
-    from pptx import Presentation
+    try:
+        from pptx import Presentation
+    except Exception as e:
+        raise UserError(f"Slides support needs python-pptx: {e}")
     prs = Presentation(str(src))
     lines = []
     for i, slide in enumerate(prs.slides, 1):
@@ -191,7 +200,10 @@ def present_to_txt(src: str | Path) -> list[Path]:
 
 
 def present_to_html(src: str | Path) -> list[Path]:
-    from pptx import Presentation
+    try:
+        from pptx import Presentation
+    except Exception as e:
+        raise UserError(f"Slides support needs python-pptx: {e}")
     prs = Presentation(str(src))
     parts = []
     for i, slide in enumerate(prs.slides, 1):
@@ -219,8 +231,11 @@ def present_to_pdf(src: str | Path) -> list[Path]:
 
 
 def yaml_to_json(src: str | Path) -> list[Path]:
-    import yaml
+    try:
+        import yaml
+    except Exception as e:
+        raise UserError(f"YAML support needs PyYAML: {e}")
     data = yaml.safe_load(read_text(src))
     out = sibling(src, ext=".json")
-    out.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(data, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
     return [out]

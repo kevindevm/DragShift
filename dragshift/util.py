@@ -114,8 +114,12 @@ def output_dir(src: str | Path) -> Path:
 def sibling(src: str | Path, suffix_label: str = "", ext: str | None = None) -> Path:
     """Output path for `src`. sibling('a.jpg', 'Cropped') -> 'a Cropped.jpg' (never overwrites)."""
     s = output_dir(src) / Path(src).name
-    stem = f"{s.stem} {suffix_label}".strip() if suffix_label else s.stem
-    new_ext = ext if ext is not None else s.suffix
+    # keep compound suffixes (.tar.gz) as one unit
+    compound = "".join(s.suffixes[-2:]) if len(s.suffixes) >= 2 and s.suffixes[-1] in (
+        ".gz", ".bz2", ".xz", ".zip") else s.suffix
+    base = s.name[:-len(compound)] if compound and s.name.endswith(compound) else s.stem
+    stem = f"{base} {suffix_label}".strip() if suffix_label else base
+    new_ext = ext if ext is not None else compound
     if new_ext in ("", "."):
         new_ext = ""
     elif not new_ext.startswith("."):

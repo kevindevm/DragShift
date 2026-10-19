@@ -261,9 +261,11 @@ class DragShiftApp(QObject):
 
     # ------------------------------------------------------------ menu contents
     def describe(self, paths: list[str]) -> str:
-        if len(paths) > 1:
-            return f"{len(paths)} files"
-        return human_size(file_size(paths[0]))
+        from .util import CONFIG
+        base = f"{len(paths)} files" if len(paths) > 1 else human_size(file_size(paths[0]))
+        dest = "→ DragShift/" if CONFIG.get("output") == "folder" else "→ junto al original"
+        cat = category(paths[0]) if paths else None
+        return f"{base} · {cat or '?'} · {dest}"
 
     def build_rings(self, paths: list[str]) -> dict[str, list[Item]]:
         cat = category(paths[0])
@@ -321,12 +323,24 @@ class DragShiftApp(QObject):
                        Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=HINTS["Hash"])]
         if extras:
             rings["Bundle"] = extras
+        try:
+            mru = self.settings.get("mru") or {}
+            for ring in rings.values():
+                ring.sort(key=lambda it: -int(mru.get(it.label, 0)))
+        except Exception:
+            pass
         return rings
 
     # ------------------------------------------------------------ actions
     def run_item(self, item: Item, paths: list[str]):
         cat = category(paths[0]) if paths else None
         kind, name = item.key.split(":", 1)
+        try:  # most-recently-used ordering for next popup
+            mru = self.settings.get("mru") or {}
+            mru[name] = int(mru.get(name, 0)) + 1
+            self.settings.set("mru", mru)
+        except Exception:
+            pass
         if cat is None or name in ("ZIP", "Hash", "B64", "Portfolio", "Diff", "Playlist",
                                    "Contact", "GIF"):
             from . import filetools, multitools
@@ -678,6 +692,27 @@ def selftest() -> int:
             con.close()
             assert category(str(dbp)) == "sheet"
             convert.convert(dbp, "sheet", "CSV")
+            from . import mediatools
+            mediatools._ffmpeg()  # fail-fast if the engine didn't bundle
+            big = Path(d) / "big.bin"
+            big.write_bytes(b"x" * 100)
+            parts = filetools.split_file(big, part_size=30)
+            assert len(parts) >= 3 and parts[0].suffix == ".part001"
+            assert filetools.join_parts(parts).read_bytes() == b"x" * 100
+            enc = filetools.encrypt_file(env, "pw123")
+            assert filetools.decrypt_file(enc, "pw123").read_bytes() == env.read_bytes()
+            filetools.qr_of_text(env)
+            filetools.b64_decode(filetools.b64_encode(env))
+            try:
+                from pptx import Presentation
+                prs = Presentation()
+                prs.slides.add_slide(prs.slide_layouts[6])
+                pptx_p = Path(d) / "s.pptx"
+                prs.save(pptx_p)
+                assert category(str(pptx_p)) == "presentation"
+                convert.convert(pptx_p, "presentation", "TXT")
+            except Exception as e:
+                raise e
             imaging.add_background(convert.open_image(src), imaging.Background())
             imaging.compress_pdf(pdf)
             imaging.protect_pdf(pdf, "pw")
