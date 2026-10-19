@@ -9,10 +9,12 @@ a = Analysis(
     ["run.py"],
     datas=[("dragshift/assets", "dragshift/assets")] + heif_datas,
     binaries=heif_bins,
-    hiddenimports=["win32com.client", "PySide6.QtNetwork", "AppKit", "Quartz", "objc"] + heif_hidden,
+    hiddenimports=["win32com.client", "PySide6.QtNetwork", "AppKit", "Quartz", "objc",
+                   "imageio_ffmpeg", "mutagen", "openpyxl", "yaml", "odf", "pptx",
+                   "ebooklib", "bs4", "lxml", "qrcode", "cryptography"] + heif_hidden,
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtQml",
               "PySide6.QtQuick", "PySide6.Qt3DCore", "PySide6.QtMultimedia", "PySide6.QtCharts",
-              "PySide6.QtDataVisualization", "PySide6.QtPdf", "pandas", "yaml", "PySide6.QtSql", "PySide6.QtTest",
+              "PySide6.QtDataVisualization", "PySide6.QtPdf", "pandas", "PySide6.QtSql", "PySide6.QtTest",
               "PySide6.QtOpenGL", "PySide6.QtSvgWidgets", "PySide6.QtDesigner", "matplotlib", "scipy"],
 )
 

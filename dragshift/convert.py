@@ -26,7 +26,12 @@ except ImportError:  # pragma: no cover
 IMAGE_TARGETS = ["PNG", "JPG", "WEBP", "HEIC", "TIFF", "AVIF", "BMP", "PDF", "ICO", "GIF"]
 PDF_TARGETS = ["JPG", "PNG", "DOCX", "TXT"]
 DOCX_TARGETS = ["PDF", "TXT"]
-TEXT_TARGETS = ["PDF", "DOCX"]
+TEXT_TARGETS = ["PDF", "DOCX", "TXT", "HTML"]
+AUDIO_TARGETS = ["MP3", "WAV", "OGG", "OPUS", "FLAC", "M4A"]
+VIDEO_TARGETS = ["MP4", "WEBM", "MKV", "MP3", "WAV", "GIF", "PNG"]
+SHEET_TARGETS = ["CSV", "XLSX", "HTML", "PDF", "TXT"]
+PRESENT_TARGETS = ["PDF", "TXT", "HTML"]
+EBOOK_TARGETS = ["TXT", "HTML", "PDF", "DOCX"]
 
 PIL_FORMAT = {"PNG": "PNG", "JPG": "JPEG", "WEBP": "WEBP", "HEIC": "HEIF", "TIFF": "TIFF",
               "AVIF": "AVIF", "BMP": "BMP", "PDF": "PDF", "ICO": "ICO", "GIF": "GIF"}
@@ -352,6 +357,48 @@ def text_to_docx(src: str | Path) -> list[Path]:
     return [out]
 
 
+def text_to_txt(src: str | Path) -> list[Path]:
+    """Normalised UTF-8 + LF copy (handy for .env / .gitignore / CRLF sources)."""
+    text = read_text(src).replace("\r\n", "\n").replace("\r", "\n")
+    if Path(src).suffix.lower() == ".txt":
+        out = sibling(src, "Normalized", ".txt")
+    else:
+        out = sibling(src, ext=".txt")
+    out.write_text(text, encoding="utf-8", newline="\n")
+    return [out]
+
+
+def text_to_html(src: str | Path) -> list[Path]:
+    """Standalone HTML with the source in a <pre> block."""
+    out = sibling(src, ext=".html")
+    body = (f"<!doctype html>\n<html><head><meta charset=\"utf-8\">\n"
+            f"<title>{html.escape(Path(src).name)}</title>\n"
+            f"<style>body{{font-family:sans-serif;margin:2em}}"
+            f"pre{{font-family:monospace;font-size:10.5pt;white-space:pre-wrap}}</style>\n"
+            f"</head><body><pre>{html.escape(read_text(src))}</pre></body></html>\n")
+    out.write_text(body, encoding="utf-8", newline="\n")
+    return [out]
+
+
+def sheet_convert(src: str | Path, target: str) -> list[Path]:
+    from . import sheettools
+    target = target.upper()
+    if target == "CSV":
+        return sheettools.sheet_to_csv(src)
+    if target == "XLSX":
+        if Path(src).suffix.lower() == ".xlsx":
+            raise ValueError("Already XLSX")
+        return sheettools.csv_to_xlsx(src)
+    if target == "HTML":
+        return sheettools.sheet_to_html(src)
+    if target == "PDF":
+        return sheettools.sheet_to_pdf(src)
+    if target == "TXT":
+        return sheettools.sheet_to_txt(src)
+    # YAML/JSON land here via text cat; sheet yaml->json handled in app tools
+    raise ValueError(f"Can't convert sheet to {target}")
+
+
 # ---------------------------------------------------------------- dispatch
 def targets_for(cat: str, src_ext: str) -> list[str]:
     src_ext = src_ext.lower().lstrip(".")
@@ -362,7 +409,11 @@ def targets_for(cat: str, src_ext: str) -> list[str]:
         if not HEIF_OK:
             t = [x for x in t if x != "HEIC"]
         return t
-    return {"pdf": PDF_TARGETS, "docx": DOCX_TARGETS, "text": TEXT_TARGETS}.get(cat, [])
+    table = {"pdf": PDF_TARGETS, "docx": DOCX_TARGETS, "text": TEXT_TARGETS,
+             "audio": AUDIO_TARGETS, "video": VIDEO_TARGETS, "sheet": SHEET_TARGETS,
+             "presentation": PRESENT_TARGETS, "ebook": EBOOK_TARGETS}
+    t = table.get(cat, [])
+    return [x for x in t if x != cur]
 
 
 def convert(src: str | Path, cat: str, target: str) -> list[Path]:
@@ -379,5 +430,64 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
     if cat == "docx":
         return docx_to_pdf(src) if target == "PDF" else docx_to_txt(src)
     if cat == "text":
-        return text_to_pdf(src) if target == "PDF" else text_to_docx(src)
+        if target == "PDF":
+            return text_to_pdf(src)
+        if target == "DOCX":
+            return text_to_docx(src)
+        if target == "TXT":
+            return text_to_txt(src)
+        if target == "HTML":
+            return text_to_html(src)
+    if cat == "audio":
+        from . import mediatools
+        return mediatools.audio_to(src, target)
+    if cat == "video":
+        from . import mediatools
+        return mediatools.video_to(src, target)
+    if cat == "sheet":
+        return sheet_convert(src, target)
+    if cat == "presentation":
+        from . import sheettools
+        if target == "TXT":
+            return sheettools.present_to_txt(src)
+        if target == "HTML":
+            return sheettools.present_to_html(src)
+        if target == "PDF":
+            return sheettools.present_to_pdf(src)
+    if cat == "ebook":
+        from . import sheettools
+        try:
+            import ebooklib
+            from ebooklib import epub
+            from bs4 import BeautifulSoup
+        except Exception as e:
+            from .util import UserError
+            raise UserError(f"Ebook support needs EbookLib+bs4: {e}")
+        book = epub.read_epub(str(src))
+        texts = []
+        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+            soup = BeautifulSoup(item.get_content(), "lxml")
+            texts.append(soup.get_text("\n"))
+        full = "\n".join(texts) or "(empty ebook)"
+        if target == "TXT":
+            out = sibling(src, ext=".txt")
+            out.write_text(full, encoding="utf-8")
+            return [out]
+        if target == "HTML":
+            out = sibling(src, ext=".html")
+            out.write_text(f"<!doctype html><html><head><meta charset='utf-8'></head>"
+                           f"<body><pre>{html.escape(full)}</pre></body></html>", encoding="utf-8")
+            return [out]
+        if target == "PDF":
+            out = sibling(src, ext=".pdf")
+            html_to_pdf(f"<pre>{html.escape(full[:30000])}</pre>", out)
+            return [out]
+        if target == "DOCX":
+            from docx import Document
+            d = Document()
+            for line in full.splitlines()[:2000]:
+                d.add_paragraph(line)
+            out = sibling(src, ext=".docx")
+            d.save(out)
+            return [out]
     raise ValueError(f"Can't convert {cat} to {target}")

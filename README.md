@@ -64,8 +64,13 @@ You can also right-click a file → **DragShift…**, use **Send to → DragShif
 |---|---|---|
 | Images (JPG, PNG, WEBP, HEIC, AVIF, TIFF, BMP, GIF, ICO) | Any of those, or PDF. Several images become one combined PDF | **Compress** (by quality or to a target size such as "under 500 KB", with a before/after preview, several files at once) · **Resize** · **Crop** (ratios, live pixel size, rotate) · **Edit** (Auto, light/colour, rotate, flip, B&W, hold to compare) · **Annotate** (arrows, boxes, numbered steps, text, marker) · **Redact** · **Add BG** · **Metadata** (camera, date, GPS location with a map link; remove location only or remove everything) |
 | PDF | JPG or PNG (one per page), DOCX, TXT | Compress · Split · Rotate · Merge (drop several) · **Protect** (AES-256 password) · **Extract images** · Metadata |
-| Word (.docx) | PDF (uses Microsoft Word if it's installed, otherwise a built-in renderer), TXT | — |
-| Text (.txt, .md, .csv…) | PDF, DOCX | — |
+| Word (.docx) | PDF (uses Microsoft Word if it's installed, otherwise a built-in renderer), TXT | Tidy · Sort · EOL LF/CRLF |
+| Text, config & code (.txt, .md, .csv, .log, .json, .xml, .yaml, .toml, .ini, .py, .js, .sh, .css, .sql…) + dotfiles (`.env`, `.gitignore`, `.dockerignore`, `.editorconfig`…) + extensionless (Dockerfile, Makefile, LICENSE, README) | PDF, DOCX, TXT (normalized UTF-8 + LF), HTML | **Tidy** · **Sort** (deduped, key-aware for `.env`) · **Mask** (`.env` KEY=\*\*\*) · **Format** (pretty JSON/XML) · **Minify** (JSON/XML/CSS) · **EOL LF / EOL CRLF** |
+| Audio (.mp3, .wav, .ogg, .opus, .flac, .m4a…) | MP3, WAV, OGG, OPUS, FLAC, M4A | **Voice** (64k mono) · **Sample 30s** · **CleanTags** |
+| Video (.mp4, .mkv, .webm, .mov, .avi…) | MP4, WEBM, MKV, MP3, WAV, GIF, PNG (thumb) | **Voice** · **Sample** · **CleanTags** · **Mute** · Compress 720p |
+| Sheets & data (.xlsx, .ods, .csv, .sqlite/.db, .yaml) | CSV, XLSX, HTML, PDF, TXT (+ YAML→JSON) | ZIP · Hash · merge multi-hoja |
+| Slides & ebooks (.pptx, .epub) | PDF, TXT, HTML (+ DOCX for epub) | ZIP · Hash |
+| Multi-file (any mix) | — | **ZIP bundle** · **Portfolio PDF** · **Diff** (2 texts → HTML) · **Contact sheet / GIF** (images) · **Playlist .m3u** (audio/video) · **Hash / B64 / QR / Split / Encrypt** |
 
 **Settings** (tray menu): trigger key (Shift, Ctrl or Alt), where results go (next to the original or a `DragShift` subfolder), JPG/WebP quality, PDF → image resolution, and start at login.
 

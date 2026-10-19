@@ -31,7 +31,11 @@ IPC_NAME = ipc_name()
 
 GLYPHS = {"Compress": "⇲", "Metadata": "ⓘ", "Redact": "▮", "Crop": "⌗", "Edit": "☼",
           "Annotate": "✎", "Add BG": "▣", "Resize": "⤢", "Split": "✂", "Rotate": "⟳",
-          "Merge": "⧉", "Protect": "⚿", "Extract": "⧈"}
+          "Merge": "⧉", "Protect": "⚿", "Extract": "⧈", "Tidy": "✦", "Sort": "⇅",
+          "Mask": "◍", "Format": "{ }", "Minify": "–", "EOL LF": "↵", "EOL CRLF": "⏎",
+          "Voice": "🎙", "Sample": "✂", "CleanTags": "🧹", "Mute": "🔇",
+          "ZIP": "📦", "Hash": "#", "B64": "64", "QR": "▦", "SplitFile": "◫",
+          "Contact": "⊞", "GIF": "🎞", "Playlist": "🎵", "Diff": "↔", "Portfolio": "📕"}
 
 HINTS = {
     "Compress": "Shrink file size", "Metadata": "View · remove GPS", "Redact": "Hide private info",
@@ -39,14 +43,42 @@ HINTS = {
     "Add BG": "Gradient backdrop", "Resize": "Change dimensions", "Split": "One PDF per page",
     "Rotate": "Turn pages 90°", "Merge": "Join into one PDF", "Protect": "Add a password",
     "Extract": "Save embedded images",
+    "Tidy": "Clean whitespace", "Sort": "Sort lines A→Z", "Mask": "Hide KEY= secrets",
+    "Format": "Pretty-print JSON/XML", "Minify": "Shrink JSON/XML/CSS",
+    "EOL LF": "Unix line endings", "EOL CRLF": "Windows line endings",
+    "Voice": "Tiny mono MP3", "Sample": "First 30s copy", "CleanTags": "Remove metadata",
+    "Mute": "Remove audio track",
+    "ZIP": "Bundle into .zip", "Hash": "SHA-256 sidecar", "B64": "Base64 encode",
+    "QR": "QR code PNG", "SplitFile": "Split 10 MB parts",
+    "Contact": "Contact sheet", "GIF": "Animated GIF", "Playlist": ".m3u list",
+    "Diff": "Diff 2 files → HTML", "Portfolio": "Portfolio PDF",
 }
 FORMAT_HINTS = {"JPG": "Small, universal", "PNG": "Lossless · transparency", "WEBP": "Smallest for web",
                 "HEIC": "iPhone format", "TIFF": "Print · archival", "AVIF": "Next-gen, tiny",
                 "BMP": "Uncompressed", "PDF": "Document", "ICO": "Windows icon", "GIF": "Legacy web",
-                "DOCX": "Editable Word", "TXT": "Plain text"}
+                "DOCX": "Editable Word", "TXT": "Plain text", "HTML": "Web page",
+                "MP3": "Audio", "WAV": "Uncompressed audio", "OGG": "Open audio",
+                "OPUS": "Voice audio", "FLAC": "Lossless audio", "M4A": "Apple audio",
+                "MP4": "Video", "WEBM": "Web video", "MKV": "Video container",
+                "CSV": "Spreadsheet", "XLSX": "Excel"}
 
 IMAGE_TOOLS = ["Compress", "Resize", "Crop", "Edit", "Annotate", "Redact", "Add BG", "Metadata"]
 PDF_TOOLS = ["Compress", "Split", "Rotate", "Protect", "Extract", "Metadata"]
+AUDIO_TOOLS = ["Voice", "Sample", "CleanTags"]
+VIDEO_TOOLS = ["Voice", "Sample", "CleanTags", "Mute"]
+
+
+def text_tools_for(path: str) -> list[str]:
+    """Tools ring for text/config/code files, filtered so each entry makes sense."""
+    from . import texttools
+    names = ["Tidy", "Sort", "EOL LF", "EOL CRLF"]
+    if texttools.can_mask(path):
+        names.append("Mask")
+    if texttools.can_format(path):
+        names.append("Format")
+    if texttools.can_minify(path):
+        names.append("Minify")
+    return names
 
 
 # ---------------------------------------------------------------- background jobs
@@ -236,6 +268,12 @@ class DragShiftApp(QObject):
     def build_rings(self, paths: list[str]) -> dict[str, list[Item]]:
         cat = category(paths[0])
         if cat is None:
+            if len(paths) >= 1:
+                # universal ZIP works for anything, even unsupported mixes
+                return {"Convert": [],
+                        "Tools": [Item("ZIP", GLYPHS["ZIP"], key="tool:ZIP", hint=HINTS["ZIP"]),
+                                  Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=HINTS["Hash"]),
+                                  Item("B64", GLYPHS["B64"], key="tool:B64", hint=HINTS["B64"])]}
             return {"Unsupported": []}
         ext = Path(paths[0]).suffix
         same = [p for p in paths if category(p) == cat]
@@ -247,15 +285,78 @@ class DragShiftApp(QObject):
             convert_items.append(Item(t, key=f"convert:{t}", hint=hint))
         rings: dict[str, list[Item]] = {"Convert": convert_items}
         if cat == "image":
-            rings["Tools"] = [Item(n, GLYPHS[n], key=f"tool:{n}", hint=HINTS[n]) for n in IMAGE_TOOLS]
+            names = list(IMAGE_TOOLS)
+            if len(same) > 1:
+                names += ["Contact", "GIF"]
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+                              for n in names]
         elif cat == "pdf":
             names = PDF_TOOLS[:3] + (["Merge"] if len(same) > 1 else []) + PDF_TOOLS[3:]
-            rings["Tools"] = [Item(n, GLYPHS[n], key=f"tool:{n}", hint=HINTS[n]) for n in names]
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+                              for n in names]
+        elif cat in ("text", "docx"):
+            names = text_tools_for(paths[0])
+            if names:
+                rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+                                  for n in names]
+        elif cat == "audio":
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+                              for n in AUDIO_TOOLS]
+        elif cat == "video":
+            rings["Tools"] = [Item(n, GLYPHS.get(n, ""), key=f"tool:{n}", hint=HINTS.get(n, ""))
+                              for n in VIDEO_TOOLS]
+        # multi-file extras live on a second ring regardless of cat
+        extras: list[Item] = []
+        if len(paths) > 1 and len(same) == len(paths):
+            if cat in ("image", "pdf", "text", "sheet", "presentation"):
+                extras.append(Item("Portfolio", GLYPHS["Portfolio"], key="tool:Portfolio",
+                                   hint=HINTS["Portfolio"]))
+            if len(paths) == 2 and cat == "text":
+                extras.append(Item("Diff", GLYPHS["Diff"], key="tool:Diff", hint=HINTS["Diff"]))
+            if cat in ("audio", "video"):
+                extras.append(Item("Playlist", GLYPHS["Playlist"], key="tool:Playlist",
+                                   hint=HINTS["Playlist"]))
+        if len(paths) > 1 or cat in ("sheet", "presentation", "ebook"):
+            extras += [Item("ZIP", GLYPHS["ZIP"], key="tool:ZIP", hint=HINTS["ZIP"]),
+                       Item("Hash", GLYPHS["Hash"], key="tool:Hash", hint=HINTS["Hash"])]
+        if extras:
+            rings["Bundle"] = extras
         return rings
 
     # ------------------------------------------------------------ actions
     def run_item(self, item: Item, paths: list[str]):
-        cat = category(paths[0])
+        cat = category(paths[0]) if paths else None
+        kind, name = item.key.split(":", 1)
+        if cat is None or name in ("ZIP", "Hash", "B64", "Portfolio", "Diff", "Playlist",
+                                   "Contact", "GIF"):
+            from . import filetools, multitools
+            if name == "ZIP":
+                all_paths = paths  # bundle the mixed selection as dropped
+                self.submit("tool:ZIP", all_paths, lambda: [filetools.zip_files(all_paths)],
+                            "Zipping…")
+            elif name == "Hash":
+                self.submit("tool:Hash", paths, lambda: [filetools.sha256_file(p) for p in paths],
+                            "Hashing…")
+            elif name == "B64":
+                self.submit("tool:B64", paths, lambda: [filetools.b64_encode(p) for p in paths],
+                            "Encoding…")
+            elif name == "Portfolio":
+                self.submit("tool:Portfolio", paths, lambda: [multitools.merge_to_single_pdf(paths)],
+                            "Building portfolio…")
+            elif name == "Diff":
+                if len(paths) >= 2:
+                    self.submit("tool:Diff", paths[:2],
+                                lambda: [filetools.diff_texts(paths[0], paths[1])], "Diffing…")
+            elif name == "Playlist":
+                self.submit("tool:Playlist", paths, lambda: [filetools.playlist_m3u(paths)],
+                            "Writing playlist…")
+            elif name == "Contact":
+                self.submit("tool:Contact", paths, lambda: [multitools.contact_sheet(paths)],
+                            "Contact sheet…")
+            elif name == "GIF":
+                self.submit("tool:GIF", paths, lambda: [multitools.images_to_gif(paths)],
+                            "Animating…")
+            return
         paths = [p for p in paths if category(p) == cat]
         kind, name = item.key.split(":", 1)
         if kind == "convert":
@@ -281,6 +382,49 @@ class DragShiftApp(QObject):
                 self.submit(f"tool:{name}", paths, lambda: [o for p in paths for o in f(p)],
                             {"Compress": "Compressing…", "Split": "Splitting…", "Rotate": "Rotating…",
                              "Extract": "Extracting images…"}[name])
+            return
+        if cat in ("text", "docx"):
+            from . import texttools
+            fns = {
+                "Tidy": texttools.tidy_text,
+                "Sort": texttools.sort_text,
+                "Mask": texttools.mask_secrets,
+                "Format": texttools.format_text,
+                "Minify": texttools.minify_text,
+                "EOL LF": lambda p: texttools.convert_eol(p, False),
+                "EOL CRLF": lambda p: texttools.convert_eol(p, True),
+            }
+            if name in fns:
+                f = fns[name]
+                self.submit(f"tool:{name}", paths, lambda: [f(p) for p in paths],
+                            {"Tidy": "Tidying…", "Sort": "Sorting…", "Mask": "Masking secrets…",
+                             "Format": "Formatting…", "Minify": "Minifying…",
+                             "EOL LF": "Converting line endings…",
+                             "EOL CRLF": "Converting line endings…"}.get(name, "Working…"))
+                return
+        if cat in ("audio", "video"):
+            from . import mediatools
+            if name in ("Voice", "Sample", "CleanTags", "Mute"):
+                if name == "Voice":
+                    self.submit("tool:Voice", paths,
+                                lambda: [mediatools.audio_voice(p) for p in paths], "Compressing voice…")
+                elif name == "Sample":
+                    self.submit("tool:Sample", paths,
+                                lambda: [mediatools.audio_sample(p) for p in paths], "Sampling…")
+                elif name == "CleanTags":
+                    self.submit("tool:CleanTags", paths,
+                                lambda: [mediatools.strip_media_tags(p) for p in paths], "Cleaning…")
+                elif name == "Mute":
+                    self.submit("tool:Mute", paths,
+                                lambda: [mediatools.video_mute(p) for p in paths], "Muting…")
+                return
+        if cat == "sheet" and name in ("ZIP", "Hash"):
+            from . import filetools
+            if name == "ZIP":
+                self.submit("tool:ZIP", paths, lambda: [filetools.zip_files(paths)], "Zipping…")
+            else:
+                self.submit("tool:Hash", paths, lambda: [filetools.sha256_file(p) for p in paths],
+                            "Hashing…")
             return
         windows = {"Crop": tools.CropWindow, "Add BG": tools.AddBgWindow, "Annotate": tools.AnnotateWindow,
                    "Redact": tools.RedactWindow, "Edit": tools.EditWindow, "Metadata": tools.MetadataWindow}
@@ -493,6 +637,47 @@ def selftest() -> int:
             (Path(d) / "n.txt").write_text("hello")
             docx = convert.convert(Path(d) / "n.txt", "text", "DOCX")[0]
             convert.convert(docx, "docx", "TXT")
+            for t in convert.TEXT_TARGETS:
+                convert.convert(Path(d) / "n.txt", "text", t)
+            env = Path(d) / ".env"
+            env.write_text("KEY=secret\nDEBUG=1  \n")
+            assert category(str(env)) == "text"
+            from . import texttools, filetools, multitools
+            texttools.tidy_text(env)
+            texttools.sort_text(env)
+            texttools.mask_secrets(env)
+            texttools.convert_eol(env, False)
+            j = Path(d) / "c.json"
+            j.write_text('{"b":1,"a":2}')
+            texttools.format_text(j)
+            texttools.minify_text(j)
+            filetools.zip_files([str(env), str(j)])
+            filetools.sha256_file(env)
+            filetools.b64_encode(env)
+            filetools.playlist_m3u([str(env), str(j)])
+            filetools.diff_texts(env, j)
+            multitools.contact_sheet([str(src), str(src)])
+            multitools.images_to_gif([str(src), str(src)])
+            # sheet: csv -> xlsx -> csv/html
+            csvp = Path(d) / "t.csv"
+            csvp.write_text("a,b\n1,2\n")
+            xlsx = convert.convert(csvp, "sheet", "XLSX")[0]
+            convert.convert(xlsx, "sheet", "CSV")
+            # yaml -> json
+            yp = Path(d) / "t.yaml"
+            yp.write_text("a: 1\n")
+            from . import sheettools
+            sheettools.yaml_to_json(yp)
+            # sqlite -> csv
+            import sqlite3
+            dbp = Path(d) / "t.db"
+            con = sqlite3.connect(dbp)
+            con.execute("CREATE TABLE t(a,b)")
+            con.execute("INSERT INTO t VALUES (1,2)")
+            con.commit()
+            con.close()
+            assert category(str(dbp)) == "sheet"
+            convert.convert(dbp, "sheet", "CSV")
             imaging.add_background(convert.open_image(src), imaging.Background())
             imaging.compress_pdf(pdf)
             imaging.protect_pdf(pdf, "pw")
