@@ -368,3 +368,39 @@ def test_filee_batch(tmp_path):
     assert {"ffmpeg", "libreoffice", "ai-bg", "office", "pandoc"} <= set(ids)
     assert updater._norm("v1.2.0") > updater._norm("1.1.0")
     assert updater._norm("1.10.0") > updater._norm("1.2.0")
+
+
+def test_preset_voice_and_websmall(tmp_path):
+    """Regression: web-small preset raised NameError (wrong loop var)."""
+    from PIL import Image
+    from dragshift.app import preset_run
+    im = tmp_path / "p.png"
+    Image.new("RGB", (800, 600), (10, 200, 30)).save(im)
+    outs = preset_run("web-small", [str(im)])
+    assert outs and outs[0].exists()
+    import pytest as _pt
+    with _pt.raises(ValueError):
+        preset_run("nope", [str(im)])
+
+
+def test_present_rich(tmp_path):
+    from pptx import Presentation
+    from pptx.util import Inches
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+    slide.shapes.title.text = "Hello Title"
+    tf = slide.placeholders[1].text_frame
+    tf.text = "First"
+    tf.add_paragraph().text = "Second"
+    tf.paragraphs[1].level = 1
+    from dragshift import convert
+    h = convert.convert(_save(prs, tmp_path), "presentation", "HTML")[0].read_text()
+    assert "Hello Title" in h and "Second" in h
+    t = convert.convert(_save(prs, tmp_path), "presentation", "TXT")[0].read_text(encoding="utf-8")
+    assert "Hello Title" in t and "• Second" in t
+
+
+def _save(prs, tmp_path):
+    p = tmp_path / "r.pptx"
+    prs.save(p)
+    return str(p)

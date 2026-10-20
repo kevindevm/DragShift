@@ -566,6 +566,12 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
         if target == "HTML":
             return pdf_to_html(src)
         if target == "DOCX":
+            try:
+                from . import engines as _eng
+                if _eng._soffice() is not None:
+                    return [_eng.libreoffice_convert(src, "docx")]
+            except Exception:
+                pass  # fall through to the built-in renderer
             return pdf_to_docx(src)
         if target == "PPTX":
             from . import sheettools
@@ -627,6 +633,12 @@ def convert(src: str | Path, cat: str, target: str) -> list[Path]:
         if target == "HTML":
             return sheettools.present_to_html(src)
         if target == "PDF":
+            try:
+                from . import engines as _eng
+                if _eng._soffice() is not None:
+                    return [_eng.libreoffice_convert(src, "pdf")]
+            except Exception:
+                pass  # fall through to the built-in renderer
             return sheettools.present_to_pdf(src)
     if cat == "ebook":
         from . import nbtools

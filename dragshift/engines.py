@@ -143,20 +143,31 @@ def status(e: Engine) -> tuple[str, str]:
 
 def libreoffice_pdf(src: str | Path, out_dir: str | Path | None = None) -> Path:
     """Convert any Office doc to PDF with LibreOffice headless (fidelity route)."""
+    return libreoffice_convert(src, "pdf")
+
+
+def libreoffice_convert(src: str | Path, target: str) -> Path:
+    """Convert via LibreOffice headless to pdf/docx/xlsx/pptx/html/txt (fidelity route)."""
     from .util import UserError, sibling
     lo = _soffice()
     if not lo:
         raise UserError("LibreOffice not found. Settings → Opcionales → LibreOffice to install it.")
     import subprocess
     import tempfile
+    target = target.lower()
+    filt = {"pdf": "pdf", "docx": "docx", "xlsx": "xlsx", "pptx": "pptx",
+            "html": "html", "txt": "txt"}.get(target)
+    if filt is None:
+        raise UserError(f"LibreOffice can't convert to {target}.")
+    out_ext = ".docx" if target == "docx" else "." + target
     with tempfile.TemporaryDirectory() as d:
-        r = subprocess.run([str(lo), "--headless", "--convert-to", "pdf", "--outdir", d, str(src)],
-                           capture_output=True, text=True)
-        pdfs = list(Path(d).glob("*.pdf"))
-        if r.returncode != 0 or not pdfs:
-            raise UserError(f"LibreOffice failed: {(r.stderr or r.stdout)[-400:]}")
-        out = sibling(src, ext=".pdf")
-        out.write_bytes(pdfs[0].read_bytes())
+        r = subprocess.run([str(lo), "--headless", "--convert-to", filt, "--outdir", d, str(src)],
+                           capture_output=True, text=True, timeout=600)
+        outs = list(Path(d).glob(f"*{out_ext}"))
+        if r.returncode != 0 or not outs:
+            raise UserError(f"LibreOffice failed: {(r.stderr or r.stdout or '')[-400:]}")
+        out = sibling(src, ext=out_ext)
+        out.write_bytes(outs[0].read_bytes())
         return out
 
 

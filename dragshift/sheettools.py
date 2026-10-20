@@ -352,6 +352,25 @@ def yaml_to_toml(src: str | Path) -> list[Path]:
     return [out]
 
 
+def _slide_title(slide) -> str:
+    for shape in slide.shapes:
+        try:
+            if shape.is_placeholder and shape.placeholder_format.type in (1, 2, 3):
+                t = (shape.text or "").strip()
+                if t:
+                    return t
+        except Exception:
+            pass
+    return ""
+
+
+def _para_level(par) -> int:
+    try:
+        return int(par.level or 0)
+    except Exception:
+        return 0
+
+
 def present_to_txt(src: str | Path) -> list[Path]:
     try:
         from pptx import Presentation
@@ -365,14 +384,22 @@ def present_to_txt(src: str | Path) -> list[Path]:
         return [out]
     lines = []
     for i, slide in enumerate(prs.slides, 1):
-        lines.append(f"--- Slide {i} ---")
+        title = _slide_title(slide)
+        lines.append(f"--- Slide {i}{(': ' + title) if title else ''} ---")
         for shape in slide.shapes:
-            if shape.has_text_frame:
-                t = shape.text.strip()
-                if t:
-                    lines.append(t)
+            try:
+                if shape.has_table:
+                    for row in shape.table.rows:
+                        lines.append(" | ".join(c.text.strip().replace("\n", " ") for c in row.cells))
+                elif shape.has_text_frame:
+                    for par in shape.text_frame.paragraphs:
+                        t = (par.text or "").strip()
+                        if t and t != title:
+                            lines.append("  " * min(_para_level(par), 3) + ("• " if _para_level(par) else "") + t)
+            except Exception:
+                continue
     out = sibling(src, ext=".txt")
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     return [out]
 
 
@@ -391,10 +418,40 @@ def present_to_html(src: str | Path) -> list[Path]:
         return [out]
     parts = []
     for i, slide in enumerate(prs.slides, 1):
-        parts.append(f"<h2>Slide {i}</h2>")
+        title = _slide_title(slide)
+        parts.append(f"<h2>Slide {i}{(': ' + html.escape(title)) if title else ''}</h2>")
         for shape in slide.shapes:
-            if shape.has_text_frame and shape.text.strip():
-                parts.append(f"<p>{html.escape(shape.text.strip())}</p>")
+            try:
+                if shape.has_table:
+                    rows = []
+                    for row in shape.table.rows:
+                        cells = "".join(f"<td>{html.escape(c.text.strip().replace(chr(10), ' '))}</td>"
+                                        for c in row.cells)
+                        rows.append(f"<tr>{cells}</tr>")
+                    parts.append("<table border='1' cellspacing='0' cellpadding='4'>" + "".join(rows) + "</table>")
+                elif shape.has_text_frame:
+                    for par in shape.text_frame.paragraphs:
+                        t = (par.text or "").strip()
+                        if not t or (title and t == title):
+                            continue
+                        lvl = min(_para_level(par), 6)
+                        if lvl:
+                            parts.append(f"<p style='margin-left:{lvl * 24}px'>• {html.escape(t)}</p>")
+                        else:
+                            b = "".join(f"<b>{html.escape(r.text)}</b>" if r.font.bold else html.escape(r.text or "")
+                                        for r in par.runs) or html.escape(t)
+                            parts.append(f"<p>{b}</p>")
+                elif shape.shape_type == 13:  # picture
+                    try:
+                        import base64 as _b64
+                        blob, ext = shape.image.blob, shape.image.ext
+                        mime = "jpeg" if ext.lower() in ("jpg", "jpeg") else "png"
+                        parts.append(f"<img src='data:image/{mime};base64,{_b64.b64encode(blob).decode()}' "
+                                     f"style='max-width:100%'>")
+                    except Exception:
+                        pass
+            except Exception:
+                continue
     out = sibling(src, ext=".html")
     out.write_text("<!doctype html><html><head><meta charset='utf-8'></head><body>"
                    + "\n".join(parts) + "</body></html>", encoding="utf-8")

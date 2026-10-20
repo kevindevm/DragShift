@@ -100,6 +100,18 @@ def presets_for(cat: str | None) -> list[str]:
     return [n for n, p in PRESETS.items() if cat in p.get("cats", ())]
 
 
+def preset_run(name: str, paths: list[str]) -> list:
+    """Run a preset synchronously (background jobs call this via submit)."""
+    p = PRESETS.get(name, {})
+    if p.get("tool") == "Compress":
+        from . import imaging
+        return [imaging.compress_to(f, p["q"], p["side"], p["fmt"]) for f in paths]
+    if p.get("tool") == "Voice":
+        from . import mediatools
+        return [mediatools.audio_voice(f) for f in paths]
+    raise ValueError(f"Unknown preset {name}")
+
+
 def text_tools_for(path: str) -> list[str]:
     """Tools ring for text/config/code files, filtered so each entry makes sense."""
     from . import texttools
@@ -448,14 +460,7 @@ class DragShiftApp(QObject):
             if cat not in p.get("cats", ()):
                 self.toasts.error(f"Preset {name}", f"Not for {cat or '?'} files.")
                 return
-            if p.get("tool") == "Compress":
-                self.submit(f"preset:{name}", paths,
-                            lambda: [imaging.compress_to(x, p["q"], p["side"], p["fmt"]) for p in paths],
-                            f"Preset {name}…")
-            elif p.get("tool") == "Voice":
-                from . import mediatools
-                self.submit(f"preset:{name}", paths,
-                            lambda: [mediatools.audio_voice(x) for x in paths], f"Preset {name}…")
+            self.submit(f"preset:{name}", paths, lambda: preset_run(name, paths), f"Preset {name}…")
             return
         if cat is None or name in ("ZIP", "Hash", "B64", "Portfolio", "Diff", "Playlist",
                                    "Contact", "GIF", "Join", "Duplicates", "Palette",
@@ -552,7 +557,13 @@ class DragShiftApp(QObject):
                 self.submit(f"convert:{name}", paths, lambda: convert.images_to_single_pdf(paths),
                             f"Combining {len(paths)} images…")
             else:
-                verb = f"Converting to {name}…"
+                try:
+                    from . import engines as _eng
+                    _lo = ((cat == "pdf" and name == "DOCX") or
+                           (cat == "presentation" and name == "PDF")) and _eng._soffice() is not None
+                except Exception:
+                    _lo = False
+                verb = "Converting with LibreOffice…" if _lo else f"Converting to {name}…"
                 self.submit(f"convert:{name}", paths,
                             lambda: [o for p in paths for o in convert.convert(p, cat, name)], verb)
             return

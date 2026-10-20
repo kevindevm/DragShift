@@ -271,6 +271,8 @@ ES = {
     "Passwords don't match yet.": "Las claves aún no coinciden.",
     "Protect": "Proteger",
     "Presets — percent or longest side in px": "Ajustes — porcentaje o lado mayor en px",
+    "Converting with LibreOffice…": "Convirtiendo con LibreOffice…",
+    "Preset": "Ajuste",
     "Exact size": "Tamaño exacto",
     "Keep proportions": "Mantener proporción",
     "Brightness": "Brillo",
