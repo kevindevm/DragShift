@@ -5,6 +5,7 @@ from PyInstaller.utils.hooks import collect_all
 
 onefile = os.environ.get("ONEFILE") == "1"
 heif_datas, heif_bins, heif_hidden = collect_all("pillow_heif")
+crypto_datas, crypto_bins, crypto_hidden = collect_all("cryptography")
 try:
     from imageio_ffmpeg import get_ffmpeg_exe
     _ff = get_ffmpeg_exe()
@@ -18,13 +19,13 @@ _sqlite_bins = [(_sqlite, ".")] if os.path.exists(_sqlite) else []
 
 a = Analysis(
     ["run.py"],
-    datas=[("dragshift/assets", "dragshift/assets")] + heif_datas,
-    binaries=heif_bins + ff_bins + _sqlite_bins,
+    datas=[("dragshift/assets", "dragshift/assets")] + heif_datas + crypto_datas,
+    binaries=heif_bins + ff_bins + _sqlite_bins + crypto_bins,
     hiddenimports=["win32com.client", "PySide6.QtNetwork", "AppKit", "Quartz", "objc",
                    "imageio_ffmpeg", "mutagen", "openpyxl", "yaml", "odf", "pptx",
                    "ebooklib", "bs4", "lxml", "qrcode", "cryptography",
                    "docx", "docx.enum.text", "docx.shared", "fitz", "pymupdf",
-                   "soupsieve", "tomli"] + heif_hidden,
+                   "soupsieve", "tomli"] + heif_hidden + crypto_hidden,
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtQml",
               "PySide6.QtQuick", "PySide6.Qt3DCore", "PySide6.QtMultimedia", "PySide6.QtCharts",
               "PySide6.QtDataVisualization", "PySide6.QtPdf", "pandas", "PySide6.QtSql", "PySide6.QtTest",

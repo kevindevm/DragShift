@@ -136,10 +136,12 @@ jobs:
           lines = []
           for fp in files:
               try:
-                  lines += ['--- ' + str(fp) + ' ---'] + fp.read_text(errors='replace').splitlines()[-40:]
+                  lines += ['--- ' + str(fp) + ' ---'] + fp.read_text(errors='replace').splitlines()[-120:]
               except Exception as e:
                   lines += ['--- ' + str(fp) + ' unreadable: ' + str(e)]
-          kept = [l for l in lines if l.strip()][-25:] or ['<empty selftest log>']
+          idx = max([i for i, l in enumerate(lines) if 'Traceback (most recent call last)' in l] or [-1])
+          kept = lines[idx:idx + 45] if idx >= 0 else [l for l in lines if l.strip()][-25:]
+          kept = kept or ['<empty selftest log>']
           print('::error title=selftest::selftest failed, log tail:')
           for l in kept:
               print('::error title=selftest::' + l.replace('%', '%25').replace(chr(13), '')[:600])
