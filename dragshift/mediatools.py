@@ -17,6 +17,7 @@ VIDEO_TARGETS = ["MP4", "WEBM", "MKV", "MP3", "WAV", "GIF", "PNG"]
 def _ffmpeg() -> str:
     import os
     import sys
+    import time
     try:
         if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
             base = Path(sys._MEIPASS)
@@ -29,7 +30,15 @@ def _ffmpeg() -> str:
             if hits:
                 return str(hits[0])
         from imageio_ffmpeg import get_ffmpeg_exe
-        return get_ffmpeg_exe()
+        # first call downloads the static binary: retry on flaky CI networks
+        last: Exception | None = None
+        for attempt in range(3):
+            try:
+                return get_ffmpeg_exe()
+            except Exception as e:
+                last = e
+                time.sleep(2 ** attempt)
+        raise last  # type: ignore[misc]
     except Exception as e:
         raise UserError(f"Audio/video engine missing (imageio-ffmpeg): {e}")
 
