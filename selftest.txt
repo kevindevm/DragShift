@@ -1,0 +1,20 @@
+This plugin does not support raise()
+exit code 0
+
+==== DragShift 1.2.15 started 2026-10-20 22:08:13 ====
+selftest: images
+selftest: pdf
+selftest: docx+text
+selftest: texttools
+selftest: sheet
+selftest: sqlite
+selftest: ffmpeg
+selftest: filetools
+selftest: newcats
+selftest: liquid
+selftest: windows
+PIL/Image.py:1134: UserWarning: Palette images with Transparency expressed in bytes should be converted to RGBA images
+selftest: fontrender
+font 'Noto Sans': 169 inked samples
+font 'Noto Sans': 169 inked samples
+SELFTEST OK
