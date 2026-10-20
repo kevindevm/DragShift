@@ -254,6 +254,34 @@ def test_v5_conversions(tmp_path):
     assert state in ("ready", "no-model", "no-onnx") and msg
 
 
+def test_ci_defaults_to_english_ui(monkeypatch, tmp_path):
+    """E2E finds windows by their English titles: under CI with no stored
+    choice the UI must stay English even though the default is Spanish."""
+    from dragshift.settings import Settings
+    import os
+    s = Settings.__new__(Settings)
+    store: dict = {}
+    class _Q:
+        def value(self, k, d=None):
+            return store.get(k, d)
+        def contains(self, k):
+            return k in store
+        def setValue(self, k, v):
+            store[k] = v
+    s.q = _Q()
+    monkeypatch.delenv("DRAGSHIFT_LANG", raising=False)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert s.get("lang") == "es"
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert s.get("lang") == "en"
+    monkeypatch.setenv("DRAGSHIFT_LANG", "es")
+    assert s.get("lang") == "es"
+    store["lang"] = "es"
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv("DRAGSHIFT_LANG", raising=False)
+    assert s.get("lang") == "es"
+
+
 def test_lo_discovery_and_engines():
     from dragshift import engines
     ids = [e.id for e in engines.registry()]

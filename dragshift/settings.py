@@ -46,6 +46,14 @@ class Settings:
         self.q = QSettings(APP, APP)
 
     def get(self, key):
+        # E2E drives the real UI by its English labels: under CI (fresh profile,
+        # no user choice stored) default to English unless DRAGSHIFT_LANG says otherwise.
+        if key == "lang" and not self.q.contains("lang"):
+            import os as _os
+            if _os.environ.get("DRAGSHIFT_LANG"):
+                return _os.environ["DRAGSHIFT_LANG"]
+            if _os.environ.get("GITHUB_ACTIONS"):
+                return "en"
         v = self.q.value(key, DEFAULTS[key])
         d = DEFAULTS[key]
         if isinstance(d, bool):
