@@ -131,7 +131,14 @@ jobs:
           if [ $rc -ne 0 ]; then
             python3 -c "
           import pathlib
-          lines = pathlib.Path('/tmp/selftest.txt').read_text(errors='replace').splitlines()
+          files = [pathlib.Path('/tmp/selftest.txt'),
+                   pathlib.Path.home() / 'Library/Logs/DragShift/log.txt']
+          lines = []
+          for fp in files:
+              try:
+                  lines += ['--- ' + str(fp) + ' ---'] + fp.read_text(errors='replace').splitlines()[-40:]
+              except Exception as e:
+                  lines += ['--- ' + str(fp) + ' unreadable: ' + str(e)]
           kept = [l for l in lines if l.strip()][-25:] or ['<empty selftest log>']
           print('::error title=selftest::selftest failed, log tail:')
           for l in kept:
