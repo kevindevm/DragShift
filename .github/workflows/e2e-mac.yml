@@ -65,7 +65,10 @@ jobs:
 
   # macOS 26 (Tahoe): menu labels must render (issue #5). Screenshots of the menu from the
   # released build (before) and from this commit (after) go to the mac26-output branch.
+  # Runs after e2e-mac on purpose: only one Tahoe runner is usually free, and two
+  # concurrent macos-26 jobs get the loser cancelled while still queued.
   labels-macos-26:
+    needs: e2e-mac
     runs-on: macos-26
     timeout-minutes: 25
     steps:
