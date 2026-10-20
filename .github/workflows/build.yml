@@ -126,13 +126,21 @@ jobs:
           set +e
           dist/DragShift.app/Contents/MacOS/DragShift --selftest > /tmp/selftest.txt 2>&1
           rc=$?
-          tail -30 /tmp/selftest.txt
+          echo "selftest exit=$rc"
+          tail -40 /tmp/selftest.txt || true
           if [ $rc -ne 0 ]; then
-            tail -25 /tmp/selftest.txt | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error title=selftest::$l"; done
-            exit $rc
+            python3 -c "
+          import pathlib
+          lines = pathlib.Path('/tmp/selftest.txt').read_text(errors='replace').splitlines()
+          kept = [l for l in lines if l.strip()][-25:] or ['<empty selftest log>']
+          print('::error title=selftest::selftest failed, log tail:')
+          for l in kept:
+              print('::error title=selftest::' + l.replace('%', '%25').replace(chr(13), '')[:600])
+          "
+            exit 11
           fi
           codesign --verify --deep --verbose=2 dist/DragShift.app || true
-          /usr/libexec/PlistBuddy -c "Print :LSUIElement" dist/DragShift.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :LSUIElement" dist/DragShift.app/Contents/Info.plist || { echo "::error title=selftest::PlistBuddy LSUIElement check failed"; exit 12; }
 
       - name: Sign & notarize the app (only when Apple credentials are configured)
         env:
