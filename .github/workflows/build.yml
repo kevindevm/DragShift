@@ -119,6 +119,21 @@ jobs:
       - name: Build DragShift.app
         run: pyinstaller DragShift.spec --noconfirm
 
+      # Intel: pip's cryptography wheel links @rpath/libssl dynamically while the
+      # libssl PyInstaller collects (framework) can be older than what _rust needs
+      # (_SSL_get0_group_name). Overwrite the bundled pair with Homebrew's fresh
+      # OpenSSL 3 (same 3.0 ABI, so python.org's _ssl keeps working).
+      - name: Refresh bundled OpenSSL (intel only)
+        if: matrix.arch == 'intel'
+        run: |
+          brew install openssl@3 || brew upgrade openssl@3 || true
+          PFX="$(brew --prefix openssl@3)"
+          echo "openssl: $PFX"
+          ls "$PFX/lib/" | grep -E "^lib(ssl|crypto)"
+          FW=dist/DragShift.app/Contents/Frameworks
+          cp -f "$PFX/lib/libssl.3.dylib" "$PFX/lib/libcrypto.3.dylib" "$FW/"
+          echo "::notice title=selftest::refreshed libssl from $PFX"
+
       - name: Diagnose bundled OpenSSL (debug intel cryptography failure)
         if: always()
         run: |
@@ -129,6 +144,7 @@ jobs:
           ls dist/DragShift.app/Contents/Frameworks/ | grep -iE "ssl|crypto" || true
           echo "--- pip cryptography ---"
           python -c "import cryptography; print(cryptography.__version__, cryptography.__file__)"
+          python -c "import cryptography; print('::notice title=selftest::pip cryptography ' + cryptography.__version__)"
           otool -L "$(python -c "import cryptography.hazmat.bindings._rust as m; print(m.__file__)")" || true
           RUST_LIB="$RUST"
           export RUST_LIB
