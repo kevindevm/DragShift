@@ -1167,15 +1167,20 @@ def selftest() -> int:
     import tempfile
     from PIL import Image
     try:
+        def _mark(s: str):
+            print(f"selftest: {s}", flush=True)
         with tempfile.TemporaryDirectory() as d:
             src = Path(d) / "t.png"
             Image.new("RGBA", (64, 48), (255, 100, 80, 255)).save(src)
+            _mark("images")
             for t in convert.targets_for("image", ".png"):
                 convert.convert(src, "image", t)
             pdf = convert.convert(src, "image", "PDF")[0]
+            _mark("pdf")
             for t in convert.PDF_TARGETS:
                 convert.convert(pdf, "pdf", t)
             (Path(d) / "n.txt").write_text("hello")
+            _mark("docx+text")
             docx = convert.convert(Path(d) / "n.txt", "text", "DOCX")[0]
             convert.convert(docx, "docx", "TXT")
             for t in convert.TEXT_TARGETS:
@@ -1184,6 +1189,7 @@ def selftest() -> int:
             env.write_text("KEY=secret\nDEBUG=1  \n")
             assert category(str(env)) == "text"
             from . import texttools, filetools, multitools
+            _mark("texttools")
             texttools.tidy_text(env)
             texttools.sort_text(env)
             texttools.mask_secrets(env)
@@ -1200,6 +1206,7 @@ def selftest() -> int:
             multitools.contact_sheet([str(src), str(src)])
             multitools.images_to_gif([str(src), str(src)])
             # sheet: csv -> xlsx -> csv/html
+            _mark("sheet")
             csvp = Path(d) / "t.csv"
             csvp.write_text("a,b\n1,2\n")
             xlsx = convert.convert(csvp, "sheet", "XLSX")[0]
@@ -1210,6 +1217,7 @@ def selftest() -> int:
             from . import sheettools
             sheettools.yaml_to_json(yp)
             # sqlite -> csv
+            _mark("sqlite")
             import sqlite3
             dbp = Path(d) / "t.db"
             con = sqlite3.connect(dbp)
@@ -1220,9 +1228,11 @@ def selftest() -> int:
             assert category(str(dbp)) == "sheet"
             convert.convert(dbp, "sheet", "CSV")
             from . import mediatools
+            _mark("ffmpeg")
             mediatools._ffmpeg()  # fail-fast if the engine didn't bundle
             big = Path(d) / "big.bin"
             big.write_bytes(b"x" * 100)
+            _mark("filetools")
             parts = filetools.split_file(big, part_size=30)
             assert len(parts) >= 3 and parts[0].suffix == ".part001"
             assert filetools.join_parts(parts).read_bytes() == b"x" * 100
@@ -1231,6 +1241,7 @@ def selftest() -> int:
             filetools.qr_of_text(env)
             filetools.b64_decode(filetools.b64_encode(env))
             # new cats quick check
+            _mark("newcats")
             srt = Path(d) / "s.srt"
             srt.write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n")
             convert.convert(srt, "subtitle", "VTT")
@@ -1260,16 +1271,19 @@ def selftest() -> int:
             imaging.compress_pdf(pdf)
             imaging.protect_pdf(pdf, "pw")
             from . import liquid
+            _mark("liquid")
             liquid.render(Image.new("RGB", (80, 80)), liquid.sdf_circle(80, 80, 40, 40, 30))
             menu = RadialMenu(lambda p: {"Convert": [Item("PNG")]}, lambda p: "1 KB")
             menu._load([str(src)])
             n = lambda *a, **k: None
+            _mark("windows")
             for w in (tools.CropWindow(str(src), n), tools.AddBgWindow(str(src), n), tools.EditWindow(str(src), n),
                       tools.AnnotateWindow(str(src), n), tools.RedactWindow(str(src), n),
                       tools.MetadataWindow(str(src), n), tools.CompressWindow([str(src)], n),
                       tools.ResizeWindow([str(src)], n), tools.ProtectWindow(str(pdf), n)):
                 w.close()
             ToastStack().info("ok", "ok").dismiss()
+            _mark("fontrender")
             check_text_renders()
         print("SELFTEST OK")
         return 0

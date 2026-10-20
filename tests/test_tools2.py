@@ -355,20 +355,23 @@ def test_ring_order_stable_for_e2e(tmp_path):
 
 
 def test_opcionales_opens_and_stays():
-    """Regression: EnginesWindow was GC'd instantly (local var). Must stay open."""
+    """Regression: EnginesWindow was GC'd instantly (local var). Must stay open.
+    No show()/raise_(): those crash headless mac CI (SIGSEGV); the ref-keep
+    is what this test guards."""
     import os
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
+    import shiboken6
     from dragshift.settings import Settings, SettingsWindow
     app = QApplication.instance() or QApplication([])
     w = SettingsWindow(Settings())
-    w._open_engines()
+    assert getattr(w, "_engines_win", None) is None
+    w._open_engines(show=False)
     win = w._engines_win
-    assert win is not None and win.isVisible()
-    w._open_engines()
+    assert win is not None and shiboken6.isValid(win)
+    w._open_engines(show=False)
     assert w._engines_win is win  # reused, not duplicated
     win.close()
-    w.close()
 
 
 def test_filee_batch(tmp_path):
