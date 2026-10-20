@@ -42,7 +42,8 @@ Root: HKCU; Subkey: "Software\Classes\*\shell\DragShift"; ValueType: string; Val
 Root: HKCU; Subkey: "Software\Classes\*\shell\DragShift"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\DragShift.exe"; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\*\shell\DragShift"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\*\shell\DragShift\command"; ValueType: string; ValueName: ""; ValueData: """{app}\DragShift.exe"" ""%1"""; Tasks: contextmenu
-Root: HKCU; Subkey: "Software\DragShift"; Flags: uninsdeletekey
+; NOTE: never touch HKCU\Software\DragShift here — that is where QSettings
+; keeps the user's config, and it must survive both upgrades and uninstalls.
 
 [Run]
 Filename: "{app}\DragShift.exe"; Description: "Launch DragShift now"; Flags: nowait postinstall skipifsilent

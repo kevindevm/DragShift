@@ -209,6 +209,10 @@ class DragShiftApp(QObject):
         self.qapp = qapp
         self.settings = Settings()
         self.settings.apply()
+        try:
+            print(f"settings: {self.settings.q.fileName()}", flush=True)
+        except Exception:
+            pass
         self.pool = QThreadPool.globalInstance()
         self.windows: list[QWidget] = []
         self.toasts = ToastStack()
