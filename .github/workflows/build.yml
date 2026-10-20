@@ -123,7 +123,14 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          dist/DragShift.app/Contents/MacOS/DragShift --selftest
+          set +e
+          dist/DragShift.app/Contents/MacOS/DragShift --selftest > /tmp/selftest.txt 2>&1
+          rc=$?
+          tail -30 /tmp/selftest.txt
+          if [ $rc -ne 0 ]; then
+            tail -25 /tmp/selftest.txt | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error title=selftest::$l"; done
+            exit $rc
+          fi
           codesign --verify --deep --verbose=2 dist/DragShift.app || true
           /usr/libexec/PlistBuddy -c "Print :LSUIElement" dist/DragShift.app/Contents/Info.plist
 
