@@ -119,6 +119,25 @@ jobs:
       - name: Build DragShift.app
         run: pyinstaller DragShift.spec --noconfirm
 
+      - name: Diagnose bundled OpenSSL (debug intel cryptography failure)
+        if: always()
+        run: |
+          RUST=$(find dist/DragShift.app/Contents/Frameworks -name "_rust.abi3.so" | head -1)
+          echo "RUST=$RUST"
+          otool -L "$RUST" || true
+          echo "--- frameworks ssl/crypto ---"
+          ls dist/DragShift.app/Contents/Frameworks/ | grep -iE "ssl|crypto" || true
+          echo "--- pip cryptography ---"
+          python -c "import cryptography; print(cryptography.__version__, cryptography.__file__)"
+          otool -L "$(python -c "import cryptography.hazmat.bindings._rust as m; print(m.__file__)")" || true
+          RUST_LIB="$RUST"
+          export RUST_LIB
+          python3 -c "
+          import subprocess, os
+          out = subprocess.run(['otool', '-L', os.environ['RUST_LIB']], capture_output=True, text=True).stdout
+          print('::notice title=selftest::otool _rust: ' + out.replace(chr(10), ' | ')[:900])
+          "
+
       - name: Self-test the app bundle
         env:
           QT_QPA_PLATFORM: offscreen
