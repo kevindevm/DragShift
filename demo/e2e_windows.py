@@ -212,6 +212,19 @@ def run(name: str, where: str, files: list[str], ring: str, label: str, verify, 
             tool()
         outs = new_files(folder, before)
         if not outs:
+            # real-mouse drops occasionally get lost by the OS (no app involved
+            # yet): redo this exact drop once before calling it a failure
+            wk.log(f"RETRY {name}: no output, re-dragging once")
+            c = wk.drag_open_menu(src_xy, nudge)
+            if ring_i == 1:
+                wk.switch_ring()
+            wk.glide(*wk.petal_xy(c, n, idx), 0.4)
+            time.sleep(0.35)
+            wk.drop()
+            if tool:
+                tool()
+            outs = new_files(folder, before)
+        if not outs:
             raise AssertionError("no output file appeared")
         note = verify(outs, srcs)
         msg = note or ", ".join(o.name for o in outs[:3])

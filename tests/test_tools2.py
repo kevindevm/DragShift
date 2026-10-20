@@ -354,6 +354,34 @@ def test_ring_order_stable_for_e2e(tmp_path):
     assert [i.label for i in r1["Tools"]] == [i.label for i in r2["Tools"]]
 
 
+def test_petal_roundtrip():
+    """Every petal position computed like the E2E must hit back its own index."""
+    import math
+    from dragshift.radial import R_IN, R_OUT, SIZE, angles
+    from dragshift import radial as _r
+
+    class _M:
+        ring_names = ["Convert"]
+        rings = {"Convert": []}
+        ring_idx = 0
+
+        @property
+        def items(self):
+            return self.rings[self.ring_names[self.ring_idx]]
+
+    for n in range(1, 13):
+        _M.rings = {"Convert": [object()] * n}
+        for i in range(n):
+            # same formula as demo/winkit.py petal_xy
+            span = 360 / n
+            ang = math.radians(90 - i * span)
+            r = (R_IN + R_OUT) / 2
+            pos = (SIZE / 2 + r * math.cos(ang), SIZE / 2 - r * math.sin(ang))
+            import collections
+            got = _r.RadialMenu.hit(_M(), type("P", (), {"x": lambda s=pos: pos[0], "y": lambda s=pos: pos[1]})())
+            assert got == i, f"n={n} i={i} hit={got}"
+
+
 def test_opcionales_opens_and_stays():
     """Regression: EnginesWindow was GC'd instantly (local var). Must stay open.
     No show()/raise_(): those crash headless mac CI (SIGSEGV); the ref-keep
