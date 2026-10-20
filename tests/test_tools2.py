@@ -487,3 +487,29 @@ def _save(prs, tmp_path):
     p = tmp_path / "r.pptx"
     prs.save(p)
     return str(p)
+
+
+def test_convert_gif_not_hijacked_by_animator(tmp_path):
+    """Regression (Win E2E JPG->GIF): run_item matched name 'GIF' ignoring the
+    ring kind, so Convert:GIF ran images_to_gif (needs >=2 images) and no file
+    ever appeared. convert: items must reach convert.convert."""
+    from PIL import Image
+    from dragshift.app import DragShiftApp
+    jpg = tmp_path / "p.jpg"
+    Image.new("RGB", (64, 48), (10, 200, 30)).save(jpg)
+    rings = DragShiftApp.build_rings(None, [str(jpg)])
+    gif = next(i for i in rings["Convert"] if i.label == "GIF")
+    assert gif.key == "convert:GIF"
+    captured: dict = {}
+    inst = DragShiftApp.__new__(DragShiftApp)
+
+    def fake_submit(action, srcs, fn, working="", extra=""):
+        captured["action"] = action
+        captured["outs"] = fn()  # run inline, no threads/toasts
+
+    inst.submit = fake_submit
+    inst.run_item(gif, [str(jpg)])
+    assert captured["action"] == "convert:GIF"
+    outs = captured["outs"]
+    assert outs and Path(str(outs[0])).suffix.lower() == ".gif"
+    assert "Animated" not in str(outs[0])  # single-photo conversion, not the animator

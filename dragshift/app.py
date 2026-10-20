@@ -466,10 +466,10 @@ class DragShiftApp(QObject):
                 return
             self.submit(f"preset:{name}", paths, lambda: preset_run(name, paths), f"Preset {name}…")
             return
-        if cat is None or name in ("ZIP", "Hash", "B64", "Portfolio", "Diff", "Playlist",
-                                   "Contact", "GIF", "Join", "Duplicates", "Palette",
-                                   "Outline", "Folder", "QR", "SplitFile", "Favicon",
-                                   "VisualDiff", "Storyboard"):
+        if kind == "tool" and (cat is None or name in ("ZIP", "Hash", "B64", "Portfolio", "Diff", "Playlist",
+                                       "Contact", "GIF", "Join", "Duplicates", "Palette",
+                                       "Outline", "Folder", "QR", "SplitFile", "Favicon",
+                                       "VisualDiff", "Storyboard")):
             from . import filetools, multitools
             if name == "ZIP":
                 all_paths = paths  # bundle the mixed selection as dropped
