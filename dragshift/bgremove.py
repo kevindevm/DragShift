@@ -19,6 +19,37 @@ MODEL_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net
 MODEL_NAME = "u2net.onnx"
 
 
+def _rembg_home_models() -> Path:
+    # rembg's own cache, e.g. C:\Users\<you>\.rembg\models\isnet-general-use\...
+    return Path.home() / ".rembg" / "models"
+
+
+def find_model() -> tuple[Path, int] | None:
+    """Best local AI model: isnet-general-use first (better edges), then u2net.
+
+    Checks rembg's cache (~/.rembg/models/…) and our own models dir.
+    Returns (path, input_size) or None.
+    """
+    cands = [
+        (_rembg_home_models() / "isnet-general-use" / "isnet-general-use.onnx", 1024),
+        (_rembg_home_models() / "u2net" / "u2net.onnx", 320),
+        (_rembg_home_models() / "u2net_human_seg" / "u2net_human_seg.onnx", 320),
+        (_rembg_home_models() / "u2net_cloth_seg" / "u2net_cloth_seg.onnx", 320),
+        (models_dir() / MODEL_NAME, 320),
+    ]
+    for p, size in cands:
+        try:
+            if p.exists() and p.stat().st_size > 10_000_000:
+                return p, size
+        except OSError:
+            continue
+    return None
+
+
+def ai_model_present() -> bool:
+    return find_model() is not None
+
+
 def models_dir() -> Path:
     if sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share")
@@ -29,10 +60,6 @@ def models_dir() -> Path:
     d = base / "DragShift" / "models"
     d.mkdir(parents=True, exist_ok=True)
     return d
-
-
-def ai_model_present() -> bool:
-    return (models_dir() / MODEL_NAME).exists()
 
 
 def ai_ready() -> bool:
@@ -60,7 +87,9 @@ def ai_status() -> tuple[str, str]:
     has_model = ai_model_present()
     has_onnx = onnx_available()
     if has_model and has_onnx:
-        return "ready", "AI ready (model downloaded)"
+        found = find_model()
+        name = found[0].stem if found else "model"
+        return "ready", f"AI ready ({name})"
     if not has_onnx:
         return "no-onnx", "Downloads onnxruntime (~90 MB) + model (~176 MB), once"
     return "no-model", "Model not downloaded yet (downloads ~176 MB on first AI use)"
@@ -143,8 +172,7 @@ def remove_solid_background(src: str | Path, tolerance: int = 32, feather: int =
     return out
 
 
-def _u2net_session(model: Path):
-    import numpy as np
+def _ai_session(model: Path):
     import onnxruntime as ort
     opts = ort.SessionOptions()
     opts.intra_op_num_threads = max(1, (os.cpu_count() or 4) // 2)
@@ -152,39 +180,40 @@ def _u2net_session(model: Path):
 
 
 def remove_ai_background(src: str | Path, progress=None) -> Path:
-    """u2net inference. Downloads model on first use. Raises UserError when unavailable."""
-    # rembg fast path (dev machines that already have it)
+    """u2net/isnet inference. Uses the best local model, downloads u2net if none."""
+    from .convert import flatten, open_image
+    # rembg fast path (dev machines that already have it): honors EXIF via open_image
     try:
         import rembg
-        from PIL import Image as _I
-        im = _I.open(src)
-        out_im = rembg.remove(im)
+        out_im = rembg.remove(open_image(src))
         out = sibling(src, "No BG AI", ".png")
         out_im.save(out, "PNG")
         return out
     except Exception:
         pass
     ensure_onnxruntime()
-    model = ensure_model(progress)
+    found = find_model()
+    if found is None:
+        model, size = ensure_model(progress), 320
+    else:
+        model, size = found
     try:
         import numpy as np
-        from PIL import Image as _I
     except Exception as e:
-        raise UserError(f"AI background needs numpy/Pillow: {e}")
-    im = _I.open(src).convert("RGB")
+        raise UserError(f"AI background needs numpy: {e}")
+    im = flatten(open_image(src)).convert("RGB")  # EXIF-aware: no rotated cutouts
     w, h = im.size
-    small = im.resize((320, 320), _I.BILINEAR)
+    small = im.resize((size, size), Image.BILINEAR) if (Image := __import__("PIL.Image", fromlist=["Image"])) else None
     arr = (np.asarray(small).astype(np.float32) / 255.0 - np.array([0.485, 0.456, 0.406], np.float32)) \
         / np.array([0.229, 0.224, 0.225], np.float32)
     arr = arr.transpose(2, 0, 1)[None]
     try:
-        sess = _u2net_session(model)
+        sess = _ai_session(model)
         pred = sess.run(None, {sess.get_inputs()[0].name: arr})[0][0][0]
     except Exception as e:
         raise UserError(f"AI inference failed: {e}")
     pred = (pred - pred.min()) / max(1e-6, (pred.max() - pred.min()))
-    from PIL import Image as _I2
-    mask = _I2.fromarray((pred * 255).astype(np.uint8)).resize((w, h), _I2.BILINEAR)
+    mask = Image.fromarray((pred * 255).astype(np.uint8)).resize((w, h), Image.BILINEAR)
     out_im = im.convert("RGBA")
     out_im.putalpha(mask)
     out = sibling(src, "No BG AI", ".png")

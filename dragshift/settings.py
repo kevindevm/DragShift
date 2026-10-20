@@ -29,7 +29,7 @@ DEFAULTS = {
     "hub_ms": 420,
     "high_contrast": False,
     "font_scale": 100,
-    "bg_mode": "solid",
+    "bg_mode": "auto",
     "update_check": False,
     "last_update_check": "",
     "hot_enable": False,
@@ -221,7 +221,9 @@ class SettingsWindow(GlassWindow):
             _ai_label = tr("AI u2net (ready ✓)") if _st == "ready" else tr("AI u2net (auto-downloads once)")
         except Exception:
             _ai_label = tr("AI u2net (auto-downloads once)")
-        self.bgm = combo([("solid", tr("Solid (instant)")), ("ai", _ai_label)],
+        self.bgm = combo([("auto", tr("Auto (AI if installed, else solid)")),
+                          ("solid", tr("Solid (always)")),
+                          ("ai", tr("AI (force, errors if missing)") + f" — {_ai_label}")],
                          self.s.get("bg_mode"))
         self.bgm.currentIndexChanged.connect(lambda _: self._save("bg_mode", self.bgm.currentData()))
         grid.addWidget(self.bgm, r, 1)

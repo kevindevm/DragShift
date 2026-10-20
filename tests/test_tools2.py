@@ -212,6 +212,30 @@ def test_v5_conversions(tmp_path):
     assert out.suffix == ".png" and Image.open(out).mode == "RGBA"
     assert bgremove.models_dir().exists()
     assert bgremove.ai_status()[0] in ("ready", "no-model", "no-onnx")
+    # isnet preferred over u2net when both exist (rembg cache layout)
+    import pathlib as _pl
+    home = tmp_path / "fakehome"
+    (home / ".rembg" / "models" / "isnet-general-use").mkdir(parents=True)
+    (home / ".rembg" / "models" / "u2net").mkdir(parents=True)
+    (home / ".rembg" / "models" / "u2net" / "u2net.onnx").write_bytes(b"\0" * 11_000_000)
+    (home / ".rembg" / "models" / "isnet-general-use" / "isnet-general-use.onnx").write_bytes(b"\0" * 11_000_000)
+    orig_home = _pl.Path.home
+    _pl.Path.home = classmethod(lambda cls: home)
+    try:
+        found = bgremove.find_model()
+        assert found is not None and found[0].name == "isnet-general-use.onnx" and found[1] == 1024
+    finally:
+        _pl.Path.home = orig_home
+    # real AI path when engine+model exist here (uses EXIF-aware open_image)
+    if bgremove.onnx_available() and bgremove.find_model() is not None:
+        from PIL import Image as _I
+        ex = _I.Exif()
+        ex[0x0112] = 6  # rotate 90 CW
+        tall = tmp_path / "tall.jpg"
+        _I.new("RGB", (60, 100), (30, 120, 30)).save(tall, exif=ex)
+        ref = convert.open_image(tall)
+        got = bgremove.remove_ai_background(tall)
+        assert _I.open(got).size == ref.size
     from dragshift import imaging as _im
     from dragshift.convert import open_image
     assert _im.save_like(_im.watermark(open_image(im2), "TEST"), im2, "WM").exists()
